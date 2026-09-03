@@ -27,7 +27,6 @@ Aplicación web para consultar la disponibilidad y realizar reservas de salas de
 
 Actualmente el proyecto se encuentra en la etapa de definición y planificación.
 
-El desarrollo de la aplicación todavía no ha comenzado.
 
 ## Equipo
 
