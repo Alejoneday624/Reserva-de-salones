@@ -8,12 +8,25 @@ import viteLogo from "./assets/vite.svg";
 import "./App.css";
 
 import { getSaludo } from "./api/reservasApi";
+import { getDatosPrueba } from "./api/reservasApi";
 
 function App() {
   const [count, setCount] = useState(0);
   const [mensaje, setMensaje] = useState("");
 
   useEffect(() => {
+    const cargarDatos = async () => {
+      const datos = await getDatosPrueba();
+
+      console.log("Usuarios:", datos.usuarios);
+      console.log("Recursos:", datos.recursos);
+      console.log("Franjas:", datos.franjas);
+      console.log("Reservas:", datos.reservas);
+      console.log(
+        "Usuario seleccionado:",
+        datos.usuario_seleccionado
+      );
+    };
     const fetchSaludo = async () => {
       try {
         const data = await getSaludo();
@@ -25,6 +38,7 @@ function App() {
     };
 
     fetchSaludo();
+    cargarDatos();
   }, []);
 
   return (
