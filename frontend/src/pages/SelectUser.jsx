@@ -53,7 +53,7 @@ export default function SelectUser() {
                 {mensaje}
             </p>
             <h2 className="text-base font-medium text-indigo-600 mt-4">
-                🚧 Este proyecto está en construcción, vuelve más tarde o vete al diablo.
+                🚧 coño mio la mujel mia.
             </h2>
             </header>
 
