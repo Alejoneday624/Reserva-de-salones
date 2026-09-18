@@ -1,41 +1,30 @@
-import { createContext, useContext, useState, useEffect } from "react";
-// import { obtenerUsuarios } from "../api/reservasApi"; // TODO: descomentar cuando el backend esté listo
+import { createContext, useContext, useState } from "react";
 
 const UserContext = createContext();
 
+function getStoredUser() {
+  try {
+    const stored = localStorage.getItem("usuario");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function UserProvider({ children }) {
-  const [nombreUsuario, setNombreUsuario] = useState(null);
-  const [listaUsuarios, setListaUsuarios] = useState([]);
-  const [cargando, setCargando] = useState(false); // false porque aún no se está cargando nada real
+  const [nombreUsuario, setNombreUsuarioState] = useState(getStoredUser);
 
-  useEffect(() => {
-    // TODO: cuando el backend esté listo, reemplazar este bloque por la llamada real:
-    //
-    // async function cargarUsuarios() {
-    //   try {
-    //     setCargando(true);
-    //     const data = await obtenerUsuarios();
-    //     setListaUsuarios(data);
-    //   } catch (error) {
-    //     console.error("Error al cargar usuarios:", error);
-    //   } finally {
-    //     setCargando(false);
-    //   }
-    // }
-    // cargarUsuarios();
-
-    // Datos temporales de prueba mientras no hay backend
-    setListaUsuarios([
-      { id: 1, nombre: "María López" },
-      { id: 2, nombre: "Juan Pérez" },
-      { id: 3, nombre: "Carlos Ruiz" },
-    ]);
-  }, []);
+  const setNombreUsuario = (user) => {
+    setNombreUsuarioState(user);
+    if (user) {
+      localStorage.setItem("usuario", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("usuario");
+    }
+  };
 
   return (
-    <UserContext.Provider
-      value={{ nombreUsuario, setNombreUsuario, listaUsuarios, cargando }}
-    >
+    <UserContext.Provider value={{ nombreUsuario, setNombreUsuario }}>
       {children}
     </UserContext.Provider>
   );

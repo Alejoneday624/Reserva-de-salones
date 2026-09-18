@@ -3,6 +3,7 @@ import { UserProvider } from "./context/UserContext";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 
 import SelectUser from "./pages/SelectUser";
+import Catalogo from "./pages/Catalogo";
 
 function App() {
   return (
@@ -12,14 +13,12 @@ function App() {
           {/* Página inicial: selección de usuario */}
           <Route path="/" element={<SelectUser />} />
 
-          {/* Rutas protegidas: se irán agregando a medida que se creen las páginas */}
-          {/*
+          {/* Ruta protegida */}
           <Route path="/catalogo" element={
             <ProtectedRoute>
               <Catalogo />
             </ProtectedRoute>
           } />
-          */}
         </Routes>
       </BrowserRouter>
     </UserProvider>
