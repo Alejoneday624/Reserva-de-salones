@@ -1,106 +1,109 @@
 import { useEffect, useState } from "react";
-import { getSaludo, getDatosPrueba } from "../api/reservasApi";
+import { useNavigate } from "react-router-dom";
+import { User } from "lucide-react";
+import { getListaUsuarios } from "../api/usuariosApi";
+import { useUser } from "../context/UserContext";
+import TopBar from "../components/common/TopBar";
+import SearchBar from "../components/common/SearchBar";
+import UserList from "../components/UserList";
+import ConfirmModal from "../components/common/ConfirmModal";
 
 export default function SelectUser() {
-  const [mensaje, setMensaje] = useState("");
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const { setNombreUsuario } = useUser();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchSaludo = async () => {
-      try {
-        const data = await getSaludo();
-        setMensaje(data.mensaje);
-      } catch (err) {
-        console.error("Error al obtener el saludo:", err);
-      }
-    };
-
     const cargarDatos = async () => {
+      setCargando(true);
       try {
-        const data = await getDatosPrueba();
+        const data = await getListaUsuarios();
         setDatos(data);
       } catch (err) {
-        console.error("Error al cargar datos de prueba:", err);
-        setError("No se pudieron cargar los datos de prueba");
+        console.error("Error al cargar datos:", err);
+        setError("No se pudieron cargar los datos");
+      } finally {
+        setCargando(false);
       }
     };
 
-    const cargarTodo = async () => {
-      setCargando(true);
-      await Promise.all([fetchSaludo(), cargarDatos()]);
-      setCargando(false);
-    };
-
-    cargarTodo();
+    cargarDatos();
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="min-h-screen bg-slate-100">
+      <TopBar />
 
-        {/* Encabezado */}
-        <header className="rounded-xl bg-white p-6 shadow-sm border border-slate-200 text-center">
-            <h1 className="text-3xl font-bold text-slate-800">
-                {mensaje ? " Conectado al backend y a la base de datos" : "Conectando..."}
-            </h1>
-             <p className="text-lg font-semibold text-green-600 mt-2">
-                {datos && " Conexión exitosa con Supabase"}
-            </p>
-
-            <p className="text-sm text-slate-500 mt-2">
-                {mensaje}
-            </p>
-            <h2 className="text-base font-medium text-indigo-600 mt-4">
-                🚧 coño mio la mujel mia.
-            </h2>
-            </header>
-
-        {/* Estado de carga / error */}
-        {cargando && (
-          <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200 text-slate-500 text-center">
-            Cargando datos...
+      <div className="flex justify-center px-4 py-10">
+        <div className="w-full max-w-5xl bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-h-[calc(100vh-120px)] flex flex-col">
+          {/* Encabezado */}
+          <div className="flex items-center gap-2 mb-1">
+            <User className="w-5 h-5 text-blue-600" />
+            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">
+              Identificación de usuario
+            </span>
           </div>
-        )}
+          <h2 className="text-2xl font-bold text-slate-900 mb-1">
+            ¿Quién eres?
+          </h2>
+          <p className="text-sm text-slate-500 mb-6">
+            Selecciona tu nombre de la siguiente lista de estudiantes
+            preestablecidos para acceder instantáneamente a tu panel de reservas.
+          </p>
 
-        {error && (
-          <div className="rounded-xl bg-red-50 p-4 border border-red-200 text-red-700">
-            {error}
-          </div>
-        )}
+          {/* Barra de búsqueda */}
+          {!cargando && !error && (
+            <SearchBar value={search} onChange={setSearch} />
+          )}
 
-        {/* Totales */}
-        {!cargando && datos && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <TotalCard titulo="Usuarios" total={datos.usuarios ?? 0} />
-              <TotalCard titulo="Recursos" total={datos.recursos ?? 0} />
-              <TotalCard titulo="Franjas" total={datos.franjas ?? 0} />
-              <TotalCard titulo="Reservas" total={datos.reservas ?? 0} />
+          {/* Estado de carga */}
+          {cargando && (
+            <div className="text-slate-400 text-sm text-center py-8">
+              Cargando usuarios...
             </div>
+          )}
 
-            {/* Usuario de la base de datos */}
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200 text-center">
-              <p className="text-sm text-slate-500">
-                Usuario de la base de datos
-              </p>
-              <p className="text-lg font-semibold text-slate-800 mt-1">
-                {datos.usuario_seleccionado ?? "Sin usuarios registrados"}
-              </p>
+          {/* Error */}
+          {error && (
+            <div className="rounded-xl bg-red-50 p-4 border border-red-200 text-red-700 text-sm">
+              {error}
             </div>
-          </>
-        )}
+          )}
+
+          {/* Lista de usuarios */}
+          {!cargando && !error && (
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <UserList
+                users={datos?.usuarios_lista ?? []}
+                search={search}
+                onSelectUser={(user) => {
+                  setSelectedUser(user);
+                  setShowModal(true);
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
 
-function TotalCard({ titulo, total }) {
-  return (
-    <div className="rounded-xl bg-white p-6 shadow-sm border border-slate-200 text-center">
-      <p className="text-3xl font-bold text-indigo-600">{total}</p>
-      <p className="text-sm text-slate-500 mt-1">{titulo}</p>
+      <ConfirmModal
+        isOpen={showModal}
+        userName={selectedUser?.name}
+        onConfirm={() => {
+          setNombreUsuario(selectedUser);
+          setShowModal(false);
+          navigate("/catalogo");
+        }}
+        onCancel={() => {
+          setShowModal(false);
+          setSelectedUser(null);
+        }}
+      />
     </div>
   );
 }
