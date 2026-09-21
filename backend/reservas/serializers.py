@@ -1,14 +1,26 @@
 from rest_framework import serializers
-from .models import Usuarios
+from .models import Usuarios, Recursos
 
 
 class UsuariosSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="nombre")
-    subtitle = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuarios
-        fields = ["id", "name", "subtitle", "codigo", "programa", "correo"]
+        fields = ["id", "name", "codigo", "programa", "correo"]
 
-    def get_subtitle(self, obj):
-        return "Estudiante Pregrado UAN"
+
+
+
+class CatalogoRecursosSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nombre = serializers.CharField(max_length=120)
+    tipo = serializers.CharField(max_length=60)
+    ubicacion = serializers.CharField(max_length=80)
+    capacidad = serializers.IntegerField()
+    atributos = serializers.CharField(max_length=200, allow_blank=True, allow_null=True)
+    activo = serializers.BooleanField()
+
+    class Meta:
+        model = Recursos
+        fields = ["id", "nombre", "tipo", "ubicacion", "capacidad", "atributos", "activo"]
