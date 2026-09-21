@@ -4,19 +4,24 @@ import ProtectedRoute from "./components/common/ProtectedRoute";
 
 import SelectUser from "./pages/SelectUser";
 import Catalogo from "./pages/Catalogo";
+import SalonDetalle from "./pages/SalonDetalle";
 
 function App() {
   return (
     <UserProvider>
       <BrowserRouter>
         <Routes>
-          {/* Página inicial: selección de usuario */}
           <Route path="/" element={<SelectUser />} />
 
-          {/* Ruta protegida */}
           <Route path="/catalogo" element={
             <ProtectedRoute>
               <Catalogo />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/catalogo/:id" element={
+            <ProtectedRoute>
+              <SalonDetalle />
             </ProtectedRoute>
           } />
         </Routes>
