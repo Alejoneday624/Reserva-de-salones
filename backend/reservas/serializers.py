@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuarios, Recursos
+from .models import Usuarios, Recursos, Franjas
 
 
 class UsuariosSerializer(serializers.ModelSerializer):
@@ -24,3 +24,13 @@ class CatalogoRecursosSerializer(serializers.Serializer):
     class Meta:
         model = Recursos
         fields = ["id", "nombre", "tipo", "ubicacion", "capacidad", "atributos", "activo"]
+
+
+class RecursoDetalleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Recursos
+        fields = ["id", "nombre", "tipo", "ubicacion", "capacidad", "atributos", "activo"]
+
+
+
+

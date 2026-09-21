@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 import { getCatalogoRecursos } from "../api/recursosCatalogo";
 import VerButton from "./common/VerButton";
 
 export default function StudyRoomsContainer() {
+  const navigate = useNavigate();
   const [recursos, setRecursos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
@@ -91,7 +93,7 @@ export default function StudyRoomsContainer() {
 
           {/* Botón */}
           <div className="mt-auto pt-2">
-            <VerButton onClick={() => console.log("Ver disponibilidad:", recurso.id)} />
+            <VerButton onClick={() => navigate(`/catalogo/${recurso.id}`)} />
           </div>
         </div>
       ))}
