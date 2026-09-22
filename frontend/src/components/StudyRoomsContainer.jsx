@@ -4,28 +4,35 @@ import { Users } from "lucide-react";
 import { getCatalogoRecursos } from "../api/recursosCatalogo";
 import VerButton from "./common/VerButton";
 
-export default function StudyRoomsContainer() {
+export default function StudyRoomsContainer({ tipo = "", capMin = null, capMax = null }) {
   const navigate = useNavigate();
   const [recursos, setRecursos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let cancelado = false;
+
     const fetchRecursos = async () => {
       setCargando(true);
+      setError(null);
       try {
-        const data = await getCatalogoRecursos();
-        setRecursos(data.catalogo_recursos ?? []);
+        const data = await getCatalogoRecursos({ tipo, capMin, capMax });
+        if (!cancelado) setRecursos(data.catalogo_recursos ?? []);
       } catch (err) {
         console.error("Error al cargar catálogo:", err);
-        setError("No se pudieron cargar los recursos");
+        if (!cancelado) setError("No se pudieron cargar los recursos");
       } finally {
-        setCargando(false);
+        if (!cancelado) setCargando(false);
       }
     };
 
     fetchRecursos();
-  }, []);
+
+    return () => {
+      cancelado = true;
+    };
+  }, [tipo, capMin, capMax]);
 
   if (cargando) {
     return (
@@ -39,6 +46,21 @@ export default function StudyRoomsContainer() {
     return (
       <div className="rounded-xl bg-red-50 p-4 border border-red-200 text-red-700 text-sm">
         {error}
+      </div>
+    );
+  }
+
+  if (recursos.length === 0) {
+    const criterios = [
+      tipo ? `tipo "${tipo}"` : null,
+      capMin || capMax ? `capacidad ${capMin ?? "*"}–${capMax ?? "*"}` : null,
+    ].filter(Boolean);
+
+    return (
+      <div className="rounded-xl bg-slate-50 p-6 border border-slate-200 text-slate-500 text-sm text-center py-8">
+        {criterios.length
+          ? `No hay recursos con ${criterios.join(" y ")}.`
+          : "No hay recursos registrados."}
       </div>
     );
   }

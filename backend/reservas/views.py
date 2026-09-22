@@ -15,6 +15,23 @@ def usuarios_lista(request):
 @api_view(["GET"])
 def catalogo_recursos(request):
     recursos = Recursos.objects.all().order_by("nombre")
+
+    tipo = request.query_params.get("tipo")
+    if tipo:
+        recursos = recursos.filter(tipo__iexact=tipo)
+
+    for param, lookup in (("cap_min", "capacidad__gte"), ("cap_max", "capacidad__lte")):
+        valor = request.query_params.get(param)
+        if valor is None or valor == "":
+            continue
+        try:
+            recursos = recursos.filter(**{lookup: int(valor)})
+        except (TypeError, ValueError):
+            return Response(
+                {"error": f"'{param}' debe ser un número entero"},
+                status=400,
+            )
+
     serializer = CatalogoRecursosSerializer(recursos, many=True)
     return Response({"catalogo_recursos": serializer.data})
 
@@ -23,3 +40,14 @@ def recurso_detalle(request, recurso_id):
     recurso = get_object_or_404(Recursos, id=recurso_id)
     serializer = RecursoDetalleSerializer(recurso)
     return Response(serializer.data)
+
+@api_view(["GET"])
+def filtro_tipo(request):
+    tipos = (
+        Recursos.objects.exclude(tipo__isnull=True)
+        .exclude(tipo__exact="")
+        .values_list("tipo", flat=True)
+        .distinct()
+        .order_by("tipo")
+    )
+    return Response({"tipos": list(tipos)})
