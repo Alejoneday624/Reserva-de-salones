@@ -1,10 +1,22 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users } from "lucide-react";
+import { Users, SearchX } from "lucide-react";
 import { getCatalogoRecursos } from "../api/recursosCatalogo";
 import VerButton from "./common/VerButton";
 
-export default function StudyRoomsContainer({ tipo = "", capMin = null, capMax = null }) {
+// Normaliza texto para comparar sin importar mayúsculas ni tildes.
+const normalizar = (texto = "") =>
+  String(texto ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+export default function StudyRoomsContainer({
+  tipo = "",
+  capMin = null,
+  capMax = null,
+  search = "",
+}) {
   const navigate = useNavigate();
   const [recursos, setRecursos] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -65,9 +77,36 @@ export default function StudyRoomsContainer({ tipo = "", capMin = null, capMax =
     );
   }
 
+  // Búsqueda por coincidencias en nombre, tipo, ubicación y atributos.
+  const termino = normalizar(search).trim();
+  const recursosFiltrados = !termino
+    ? recursos
+    : recursos.filter((recurso) =>
+        [recurso.nombre, recurso.tipo, recurso.ubicacion, recurso.atributos]
+          .map(normalizar)
+          .some((campo) => campo?.includes(termino))
+      );
+
+  if (recursosFiltrados.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 p-10 text-center">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+          <SearchX className="w-8 h-8 text-slate-400" />
+        </div>
+        <p className="text-sm font-medium text-slate-600 mb-1">
+          No se encontraron salas
+        </p>
+        <p className="text-xs text-slate-400">
+          Revisa el término "{search.trim()}" o ajusta los filtros de tipo y
+          capacidad.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {recursos.map((recurso) => (
+      {recursosFiltrados.map((recurso) => (
         <div
           key={recurso.id}
           className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-3 shadow-sm"
