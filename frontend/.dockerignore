@@ -1,0 +1,12 @@
+# Dependencias y build (se reinstalan dentro de la imagen)
+node_modules
+dist
+
+# Secretos
+.env
+.env.*
+*.log
+
+# Git
+.git
+.gitignore

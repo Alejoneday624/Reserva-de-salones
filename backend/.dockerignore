@@ -1,0 +1,18 @@
+# Secretos: nunca deben viajar dentro de la imagen
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.log
+
+# Base de datos local
+*.sqlite3
+db.sqlite3
+
+# Git / utilidades
+.git
+.gitignore
