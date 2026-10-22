@@ -26,7 +26,7 @@ export default function SelectUser() {
         setDatos(data);
       } catch (err) {
         console.error("Error al cargar datos:", err);
-        setError("No se pudieron cargar los datos");
+        setError(err.userMessage || "No se pudieron cargar los datos");
       } finally {
         setCargando(false);
       }

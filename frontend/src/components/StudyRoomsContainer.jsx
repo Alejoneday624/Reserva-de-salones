@@ -33,7 +33,8 @@ export default function StudyRoomsContainer({
         if (!cancelado) setRecursos(data.catalogo_recursos ?? []);
       } catch (err) {
         console.error("Error al cargar catálogo:", err);
-        if (!cancelado) setError("No se pudieron cargar los recursos");
+        if (!cancelado)
+          setError(err.userMessage || "No se pudieron cargar los recursos");
       } finally {
         if (!cancelado) setCargando(false);
       }

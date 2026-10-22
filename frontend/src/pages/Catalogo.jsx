@@ -1,6 +1,5 @@
 import { useState } from "react";
-import TopBar from "../components/common/TopBar";
-import Filtros from "../components/common/Filtros";
+import Filtros from "../components/filters/Filtros";
 import SearchBar from "../components/common/SearchBar";
 import { RANGOS_CAPACIDAD } from "../constants/rangosCapacidad";
 import StudyRoomsContainer from "../components/StudyRoomsContainer";
@@ -16,7 +15,6 @@ export default function Catalogo() {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <TopBar />
       <div className="flex justify-center px-4 py-10">
         <div className="w-full max-w-5xl bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-1">

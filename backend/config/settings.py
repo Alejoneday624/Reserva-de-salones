@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,10 +25,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-sd35-^sav2#@-%iv#jv&m0wc@xwd*d*s0azv2$y+lsr1j#fy9p'
+# Se lee del entorno (.env). Si falta, el proyecto no arranca en lugar de
+# usar una clave insegura.
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        "Falta la variable SECRET_KEY en el entorno (.env). "
+        "Copia .env.example a .env y define una clave larga y aleatoria."
+    )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Por defecto False (seguro por defecto); en desarrollo, DEBUG=True en el .env.
+DEBUG = os.environ.get("DEBUG", "False").lower() in ("1", "true", "yes")
 
 ALLOWED_HOSTS = os.environ.get(
     "ALLOWED_HOSTS",
@@ -88,9 +97,22 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ImproperlyConfigured(
+        "Falta la variable DATABASE_URL en el entorno (.env). "
+        "Copia .env.example a .env y define la URL de la base de datos."
+    )
+
 DATABASES = {
+    # La BD esta en Supabase (EE. UU.): abrir una conexion TCP+TLS nueva por
+    # cada peticion costaba ~1 s de ida y vuelta antes de la primera query.
+    # conn_max_age reutiliza la conexion entre peticiones y conn_health_checks
+    # la valida antes de usarla para no fallar con conexiones caidas.
     "default": dj_database_url.parse(
-        os.getenv("DATABASE_URL")
+        DATABASE_URL,
+        conn_max_age=600,
+        conn_health_checks=True,
     )
 }
 
@@ -117,7 +139,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es-co'
 
 TIME_ZONE = 'America/Bogota'
 
