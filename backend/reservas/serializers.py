@@ -55,6 +55,38 @@ class ReservaSerializer(serializers.ModelSerializer):
         ]
 
 
+class ReservaConsultaSerializer(serializers.ModelSerializer):
+    """Reserva tal como la ve el estudiante en "Mis reservas".
+
+    La sala, la fecha y el horario salen de la propia reserva y el estado se
+    resuelve contra el momento actual (ver Reservas.estado_resuelto).
+    """
+
+    sala = serializers.CharField(source="recurso.nombre")
+    recurso_id = serializers.IntegerField(source="recurso.id")
+    ubicacion = serializers.CharField(source="recurso.ubicacion")
+    capacidad = serializers.IntegerField(source="recurso.capacidad")
+    estado = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Reservas
+        fields = [
+            "id",
+            "recurso_id",
+            "sala",
+            "ubicacion",
+            "capacidad",
+            "fecha",
+            "hora_inicio",
+            "hora_fin",
+            "estado",
+            "creada_en",
+        ]
+
+    def get_estado(self, obj):
+        return obj.estado_resuelto
+
+
 class ResumenReservaSerializer(serializers.ModelSerializer):
     recurso_nombre = serializers.CharField(source="recurso.nombre")
 

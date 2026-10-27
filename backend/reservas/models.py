@@ -6,6 +6,12 @@
 #   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
 from django.db import models
+from django.utils import timezone
+
+# Estados que la consulta de reservas muestra al estudiante. Se calculan a
+# partir del estado guardado en la BD (activa / completada / cancelada) y del
+# momento actual.
+ESTADOS_MOSTRADOS = ("activa", "en curso", "vencida", "cancelada")
 
 
 class Usuarios(models.Model):
@@ -60,3 +66,30 @@ class Reservas(models.Model):
     class Meta:
         managed = False
         db_table = 'reservas'
+
+    @property
+    def estado_resuelto(self):
+        """Estado de la reserva para mostrarlo al estudiante.
+
+        La BD guarda el estado operativo (activa / completada / cancelada) y
+        la consulta requiere: cancelada, vencida, en curso o activa. La
+        cancelación es un hecho guardado; el resto se deriva comparando
+        fecha y horario de la reserva contra el momento actual.
+
+        Usa la fecha y el horario propios de la reserva (los mismos que se
+        muestran), no los de la franja, para que lo visto y el estado
+        coincidan siempre.
+        """
+        if (self.estado or "").strip().lower() == "cancelada":
+            return "cancelada"
+
+        # localtime() devuelve hora local con tzinfo; .time()/.date() lo
+        # descartan, así que la comparación es naive contra naive.
+        ahora = timezone.localtime()
+        hoy, hora_actual = ahora.date(), ahora.time()
+
+        if self.fecha < hoy or (self.fecha == hoy and self.hora_fin <= hora_actual):
+            return "vencida"
+        if self.fecha == hoy and self.hora_inicio <= hora_actual < self.hora_fin:
+            return "en curso"
+        return "activa"
