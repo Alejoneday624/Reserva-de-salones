@@ -7,11 +7,13 @@ from .views import (
     recurso_disponibilidad,
     recurso_disponibilidad_fechas,
     reservas_crear,
+    usuario_reservas,
     usuario_resumen_reservas,
 )
 
 urlpatterns = [
     path("usuarios/", usuarios_lista),
+    path("usuarios/<int:usuario_id>/reservas/", usuario_reservas),
     path("usuarios/<int:usuario_id>/resumen-reservas/", usuario_resumen_reservas),
     path("recursos/", catalogo_recursos),
     path("recursos/<int:recurso_id>/", recurso_detalle),

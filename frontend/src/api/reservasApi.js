@@ -36,3 +36,14 @@ export const getResumenReservas = async (usuarioId, fecha) => {
     throw error;
   }
 };
+
+// Reservas del usuario seleccionado, ordenadas por fecha de creación.
+export const getReservasUsuario = async (usuarioId) => {
+  try {
+    const response = await api.get(`usuarios/${usuarioId}/reservas/`);
+    return response.data;
+  } catch (error) {
+    console.error("Error al obtener reservas del usuario:", error);
+    throw error;
+  }
+};
