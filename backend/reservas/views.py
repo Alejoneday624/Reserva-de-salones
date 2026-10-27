@@ -12,6 +12,7 @@ from .serializers import (
     RecursoDetalleSerializer,
     DisponibilidadFranjaSerializer,
     ReservaSerializer,
+    ReservaConsultaSerializer,
     ResumenReservaSerializer,
     CrearReservaSerializer,
 )
@@ -233,6 +234,30 @@ def reservas_crear(request):
 
     return Response(
         {"reservas": ReservaSerializer(reservas, many=True).data}, status=201
+    )
+
+
+@api_view(["GET"])
+def usuario_reservas(request, usuario_id):
+    """Reservas de un usuario, ordenadas por fecha de creación.
+
+    Solo se devuelven las reservas del usuario indicado (criterio 1 de la
+    HDU de consulta de reservas); si el usuario no existe se responde 404.
+    """
+    get_object_or_404(Usuarios, id=usuario_id)
+
+    reservas = (
+        Reservas.objects.select_related("recurso")
+        .filter(usuario_id=usuario_id)
+        .order_by("creada_en")
+    )
+
+    return Response(
+        {
+            "usuario_id": usuario_id,
+            "total": reservas.count(),
+            "reservas": ReservaConsultaSerializer(reservas, many=True).data,
+        }
     )
 
 
