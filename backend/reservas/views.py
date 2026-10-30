@@ -239,7 +239,7 @@ def reservas_crear(request):
 
 @api_view(["GET"])
 def usuario_reservas(request, usuario_id):
-    """Reservas de un usuario, ordenadas por fecha de creación.
+    """Reservas de un usuario, de la más reciente a la más antigua.
 
     Solo se devuelven las reservas del usuario indicado (criterio 1 de la
     HDU de consulta de reservas); si el usuario no existe se responde 404.
@@ -249,7 +249,7 @@ def usuario_reservas(request, usuario_id):
     reservas = (
         Reservas.objects.select_related("recurso")
         .filter(usuario_id=usuario_id)
-        .order_by("creada_en")
+        .order_by("-creada_en")
     )
 
     return Response(

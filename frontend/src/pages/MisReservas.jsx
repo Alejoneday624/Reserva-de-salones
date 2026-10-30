@@ -79,10 +79,10 @@ export default function MisReservas() {
         if (cancelado) return;
 
         const lista = Array.isArray(data?.reservas) ? data.reservas : [];
-        // El backend ya ordena por fecha de creación; este orden es defensivo
-        // para que la vista no dependa de ese detalle.
+        // El backend ya ordena de la más reciente a la más antigua; este
+        // orden es defensivo para que la vista no dependa de ese detalle.
         const ordenadas = [...lista].sort(
-          (a, b) => new Date(a.creada_en ?? 0) - new Date(b.creada_en ?? 0)
+          (a, b) => new Date(b.creada_en ?? 0) - new Date(a.creada_en ?? 0)
         );
         setReservas(ordenadas);
       } catch (err) {
@@ -163,7 +163,7 @@ export default function MisReservas() {
             <>
               <p className="text-xs text-slate-500 mb-4">
                 {reservas.length} reserva{reservas.length === 1 ? "" : "s"} ·
-                ordenadas por fecha de creación
+                de la más reciente a la más antigua
               </p>
 
               <div className="flex flex-col gap-4">

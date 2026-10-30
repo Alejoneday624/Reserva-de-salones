@@ -154,15 +154,20 @@ def crear_reservas(*, recurso_id, usuario_id, fecha, bloques):
                 },
             )
 
-        # 'creada_en' es timestamp SIN zona horaria en la BD, se guarda hora local
-        # de Bogotá; al leerla Django la interpreta con TIME_ZONE, así que coincide.
-        # Django avisa con RuntimeWarning al guardar una fecha naive con USE_TZ=True;
-        # es el comportamiento deseado aquí, así que se silencia.
+        # 'creada_en' es timestamp SIN zona horaria en la BD: se guarda hora
+        # local naive y Django la convierte a UTC al escribirla (USE_TZ=True),
+        # por eso la BD almacena el instante correcto en UTC. Al leerla, el
+        # ORM devuelve un naive que el serializer etiqueta como UTC (ver
+        # InstanteUTCField); así la pantalla muestra la hora local real.
+        # Guardar aquí la UTC (timezone.now()) haría que se mostrara 5 horas
+        # de más (5 PM se vería como 10 PM).
+        # Django avisa con RuntimeWarning al guardar un datetime naive con
+        # USE_TZ=True; es el comportamiento deseado aquí, así que se silencia.
         creado_en = timezone.localtime().replace(tzinfo=None)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            reservas = [
+            creadas = [
                 Reservas.objects.create(
                     id=(max_id or 0) + 1 + indice,
                     franja=franja,
@@ -179,4 +184,12 @@ def crear_reservas(*, recurso_id, usuario_id, fecha, bloques):
                 )
             ]
 
-    return reservas
+    # Se releen desde la BD para que la respuesta de creación sea idéntica a
+    # una lectura posterior ("Mis reservas"): en memoria `creada_en` trae la
+    # hora local sin convertir, mientras que la BD almacena UTC, y serializar
+    # cada caso produciría horas distintas en pantalla.
+    return list(
+        Reservas.objects.filter(id__in=[reserva.id for reserva in creadas]).order_by(
+            "id"
+        )
+    )

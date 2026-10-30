@@ -12,7 +12,7 @@ ejecutarlas, exporte ``TEST_DATABASE_URL`` apuntando a una base de pruebas:
     python manage.py test reservas --settings=config.settings_test
 """
 
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 from threading import Barrier, Thread
 
 from django.db import connection, connections
@@ -22,6 +22,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from .models import Franjas, Recursos, Reservas, Usuarios
+from .serializers import ReservaConsultaSerializer
 from .services import ReservaError, crear_reservas
 
 HORA = time
@@ -101,6 +102,7 @@ class EsquemaReservasMixin:
         fecha=None,
         estado="activa",
         franja=None,
+        creada_en=None,
     ):
         nuevo_id = (
             Reservas.objects.aggregate(max_id=Max("id"))["max_id"] or 0
@@ -117,7 +119,7 @@ class EsquemaReservasMixin:
             hora_inicio=inicio,
             hora_fin=fin,
             estado=estado,
-            creada_en=timezone.now(),
+            creada_en=creada_en or timezone.now(),
         )
 
     def payload(self, bloques, *, usuario_id=1, recurso_id=1, fecha=None):
@@ -389,3 +391,114 @@ class ConcurrenciaTests(EsquemaReservasMixin, TransactionTestCase):
 
         self.assertEqual(sorted(resultados, key=str), [409, "creada"])
         self.assertEqual(Reservas.objects.count(), 1)
+
+
+class ZonaHorariaTests(EsquemaReservasMixin, TestCase):
+    """La reserva debe verse con la hora local real, sin desfases.
+
+    Regresión del bug de zona horaria: la columna ``creada_en`` es naive y DRF
+    etiqueta el valor con TIME_ZONE, así que se debe guardar la HORA LOCAL.
+    Guardar UTC (``timezone.now()``) haría que la pantalla mostrara la hora de
+    más (3 PM se vería como 8 PM).
+    """
+
+    def _instante(self, iso):
+        """ISO de la API a datetime aware; DRF siempre envía con offset."""
+        instante = datetime.fromisoformat(iso)
+        self.assertIsNotNone(
+            instante.tzinfo, f"creada_en llegó sin zona horaria: {iso!r}"
+        )
+        return instante
+
+    def test_creada_en_es_la_hora_local_real(self):
+        self.crear_franja(HORA(15), HORA(16))
+
+        respuesta = self.post_reserva([(HORA(15), HORA(16))])
+
+        self.assertEqual(respuesta.status_code, 201)
+        creada = self._instante(respuesta.json()["reservas"][0]["creada_en"])
+
+        # El instante debe ser "ahora" (no 5 horas atrás ni por delante).
+        diferencia = abs((creada - timezone.now()).total_seconds())
+        self.assertLess(diferencia, 120)
+        # Y en hora local debe coincidir con el reloj del usuario.
+        self.assertEqual(creada.hour, timezone.localtime().hour)
+        self.assertEqual(creada.minute, timezone.localtime().minute)
+
+    def test_horario_reserva_se_guarda_y_devuelve_tal_cual(self):
+        """El horario de la reserva no debe convertirse a otra zona."""
+        self.crear_franja(HORA(15), HORA(16))
+
+        respuesta = self.post_reserva([(HORA(15), HORA(16))])
+
+        self.assertEqual(respuesta.status_code, 201)
+        reserva = respuesta.json()["reservas"][0]
+        self.assertEqual(reserva["hora_inicio"], "15:00:00")
+        self.assertEqual(reserva["hora_fin"], "16:00:00")
+
+    def test_consulta_de_reservas_devuelve_hora_local(self):
+        """"Mis reservas" muestra el mismo horario y creación sin desfase."""
+        self.crear_franja(HORA(15), HORA(16))
+        self.assertEqual(
+            self.post_reserva([(HORA(15), HORA(16))]).status_code, 201
+        )
+
+        consulta = self.client.get(f"/api/usuarios/{self.usuario.id}/reservas/")
+
+        self.assertEqual(consulta.status_code, 200)
+        reserva = consulta.json()["reservas"][0]
+        self.assertEqual(reserva["hora_inicio"], "15:00:00")
+        self.assertEqual(reserva["hora_fin"], "16:00:00")
+        creada = self._instante(reserva["creada_en"])
+        self.assertLess(abs((creada - timezone.now()).total_seconds()), 120)
+
+    def test_creada_en_coincide_al_releer_desde_la_bd(self):
+        """La hora debe coincidir también al recargar "Mis reservas".
+
+        Regresión del bug de zona horaria: la respuesta de creación
+        serializaba el objeto en memoria (hora local), pero al releer desde
+        la BD `creada_en` llegaba como UTC naive y DRF lo etiquetaba como
+        hora local: 5 horas de más en pantalla.
+        """
+        self.crear_franja(HORA(15), HORA(16))
+        self.assertEqual(self.post_reserva([(HORA(15), HORA(16))]).status_code, 201)
+
+        # Lectura fresca que pasa por la BD, igual que al recargar la pantalla.
+        reserva_bdd = ReservaConsultaSerializer(
+            Reservas.objects.get(estado="activa")
+        ).data
+        instante = self._instante(reserva_bdd["creada_en"])
+
+        self.assertLess(abs((instante - timezone.now()).total_seconds()), 120)
+        # En hora local debe coincidir con el reloj del usuario.
+        self.assertLess(
+            abs((timezone.localtime(instante) - timezone.localtime()).total_seconds()),
+            120,
+        )
+
+    def test_ultima_reserva_creada_se_lista_primero(self):
+        """"Mis reservas" lista de la más reciente a la más antigua."""
+        base = timezone.now()
+        for horas_atras, dias in ((3, 0), (2, 1), (1, 2)):
+            fecha = self.fecha + timedelta(days=dias)
+            self.crear_franja(HORA(8), HORA(9), fecha=fecha)
+            self.crear_reserva(
+                HORA(8),
+                HORA(9),
+                fecha=fecha,
+                creada_en=base - timedelta(hours=horas_atras),
+            )
+
+        respuesta = self.client.get(f"/api/usuarios/{self.usuario.id}/reservas/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        fechas = [reserva["fecha"] for reserva in respuesta.json()["reservas"]]
+        # La creada hace 1 hora (la más reciente) encabeza la lista.
+        self.assertEqual(
+            fechas,
+            [
+                (self.fecha + timedelta(days=2)).isoformat(),
+                (self.fecha + timedelta(days=1)).isoformat(),
+                self.fecha.isoformat(),
+            ],
+        )
