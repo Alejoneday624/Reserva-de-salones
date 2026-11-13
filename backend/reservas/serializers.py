@@ -137,11 +137,25 @@ class CrearReservaSerializer(serializers.Serializer):
     Acepta el formato actual (`bloques`, una lista de tramos) y el formato
     antiguo (`hora_inicio` / `hora_fin` simples), que se convierte en un único
     bloque. La validación de solape entre bloques también vive aquí.
+
+    `semanas` indica cuántas semanas seguidas se repite la reserva (1 a 4,
+    mismo día de la semana y misma franja horaria); opcional y por defecto 1,
+    para no romper a los clientes actuales.
     """
 
     recurso_id = serializers.IntegerField()
     usuario_id = serializers.IntegerField()
     fecha = serializers.DateField()
+    semanas = serializers.IntegerField(
+        default=1,
+        min_value=1,
+        max_value=4,
+        error_messages={
+            "invalid": "'semanas' debe ser un número entero",
+            "min_value": "'semanas' debe ser al menos 1",
+            "max_value": "'semanas' debe ser máximo 4",
+        },
+    )
     bloques = serializers.ListField(
         child=BloqueHorarioSerializer(),
         required=False,

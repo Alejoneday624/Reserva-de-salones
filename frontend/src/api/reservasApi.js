@@ -10,13 +10,15 @@ export const getUsuarios = async () => {
   }
 };
 
-export const crearReserva = async ({ recursoId, usuarioId, fecha, bloques }) => {
+export const crearReserva = async ({ recursoId, usuarioId, fecha, bloques, semanas = 1 }) => {
   try {
     const response = await api.post("reservas/", {
       recurso_id: recursoId,
       usuario_id: usuarioId,
       fecha,
       bloques,
+      // Repetición semanal: 1 a 4 semanas con el mismo día y horario.
+      semanas,
     });
     return response.data;
   } catch (error) {
