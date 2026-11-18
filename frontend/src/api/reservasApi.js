@@ -47,3 +47,18 @@ export const getReservasUsuario = async (usuarioId) => {
     throw error;
   }
 };
+
+// Cancela una reserva del estudiante. El backend valida que sea futura,
+// que no esté cancelada ya y que pertenezca a `usuarioId`; si falla, el
+// interceptor de axios deja el motivo en `error.userMessage`.
+export const cancelarReserva = async (reservaId, usuarioId) => {
+  try {
+    const response = await api.post(`reservas/${reservaId}/cancelar/`, {
+      usuario_id: usuarioId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error al cancelar la reserva:", error);
+    throw error;
+  }
+};

@@ -13,6 +13,7 @@ from .serializers import (
     DisponibilidadFranjaSerializer,
     ReservaSerializer,
     ReservaConsultaSerializer,
+    CancelarReservaSerializer,
     ResumenReservaSerializer,
     CrearReservaSerializer,
 )
@@ -257,6 +258,50 @@ def usuario_reservas(request, usuario_id):
             "usuario_id": usuario_id,
             "total": reservas.count(),
             "reservas": ReservaConsultaSerializer(reservas, many=True).data,
+        }
+    )
+
+
+@api_view(["POST"])
+def reservas_cancelar(request, reserva_id):
+    """Cancela una reserva del estudiante (HDU de cancelar reserva).
+
+    Reglas: la reserva debe existir, pertenecer al usuario indicado, estar
+    todavía cancelable (futura y no cancelada) y, al confirmarla, su franja
+    horaria queda libre de nuevo porque la disponibilidad solo tiene en
+    cuenta los estados de ESTADOS_OCUPADOS (activa / completada).
+    """
+    entrada = CancelarReservaSerializer(data=request.data)
+    if not entrada.is_valid():
+        return Response({"error": _mensaje_error(entrada.errors)}, status=400)
+    usuario_id = entrada.validated_data["usuario_id"]
+
+    reserva = get_object_or_404(
+        Reservas.objects.select_related("recurso"), id=reserva_id
+    )
+
+    # El estudiante solo puede cancelar reservas suyas.
+    if reserva.usuario_id != usuario_id:
+        return Response(
+            {"error": "Esta reserva no pertenece al usuario seleccionado"},
+            status=403,
+        )
+
+    if (reserva.estado or "").strip().lower() == "cancelada":
+        return Response({"error": "La reserva ya está cancelada"}, status=409)
+
+    if not reserva.es_futura:
+        return Response(
+            {"error": "Solo se pueden cancelar reservas futuras"}, status=400
+        )
+
+    reserva.estado = "cancelada"
+    reserva.save(update_fields=["estado"])
+
+    return Response(
+        {
+            "mensaje": "Reserva cancelada correctamente",
+            "reserva": ReservaConsultaSerializer(reserva).data,
         }
     )
 

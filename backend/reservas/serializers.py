@@ -67,6 +67,7 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
     ubicacion = serializers.CharField(source="recurso.ubicacion")
     capacidad = serializers.IntegerField(source="recurso.capacidad")
     estado = serializers.SerializerMethodField()
+    cancelable = serializers.BooleanField(source="es_cancelable")
 
     class Meta:
         model = Reservas
@@ -80,6 +81,7 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
             "hora_inicio",
             "hora_fin",
             "estado",
+            "cancelable",
             "creada_en",
         ]
 
@@ -93,6 +95,16 @@ class ResumenReservaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservas
         fields = ["id", "recurso", "recurso_nombre", "hora_inicio", "hora_fin", "estado"]
+
+
+class CancelarReservaSerializer(serializers.Serializer):
+    """Entrada de POST /api/reservas/<id>/cancelar/.
+
+    `usuario_id` es el estudiante que solicita la cancelación: la vista
+    verifica que la reserva le pertenezca.
+    """
+
+    usuario_id = serializers.IntegerField()
 
 
 class BloqueHorarioSerializer(serializers.Serializer):
