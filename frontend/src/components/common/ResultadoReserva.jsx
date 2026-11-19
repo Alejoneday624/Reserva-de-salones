@@ -6,6 +6,8 @@ import failedAnimation from "../../assets/animaciones/failed.json";
 // Resultado de una reserva: modal emergente con animación Lottie.
 // Uso:
 //   <ResultadoReserva tipo="exito" mensaje="Reserva confirmada..." onCerrar={...} />
+// `titulo` es opcional: permite reutilizarlo para otros éxitos (p. ej.
+// "Cancelación realizada") sin duplicar el modal.
 const TIPOS = {
   exito: {
     animacion: acceptedAnimation,
@@ -19,8 +21,9 @@ const TIPOS = {
   },
 };
 
-export default function ResultadoReserva({ tipo = "exito", mensaje, onCerrar }) {
+export default function ResultadoReserva({ tipo = "exito", titulo, mensaje, onCerrar }) {
   const config = TIPOS[tipo] ?? TIPOS.error;
+  const textoTitulo = titulo ?? config.titulo;
 
   // Cerrar con la tecla Escape.
   useEffect(() => {
@@ -42,6 +45,9 @@ export default function ResultadoReserva({ tipo = "exito", mensaje, onCerrar }) 
       <div
         className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl"
         onClick={(evento) => evento.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={textoTitulo}
       >
         <div className="mx-auto h-28 w-28">
           <Lottie
@@ -53,7 +59,7 @@ export default function ResultadoReserva({ tipo = "exito", mensaje, onCerrar }) 
         </div>
 
         <h2 className="mt-2 text-lg font-bold text-slate-900">
-          {config.titulo}
+          {textoTitulo}
         </h2>
         <p className="mt-1 text-sm text-slate-600">{mensaje}</p>
 
