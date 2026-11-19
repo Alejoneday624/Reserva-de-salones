@@ -1,0 +1,3 @@
+# Fallback de SPA para hosts estáticos (Render, Netlify).
+# Vercel usa vercel.json; esto cubre los demás.
+/*    /index.html   200

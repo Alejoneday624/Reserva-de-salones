@@ -11,12 +11,20 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Las pruebas no deben depender de un .env: usan valores desechables y SQLite
+# en memoria (ver bloque DATABASES más abajo).
+if "test" in sys.argv:
+    os.environ.setdefault("SECRET_KEY", "clave-solo-para-pruebas")
+    os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -98,23 +106,34 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise ImproperlyConfigured(
-        "Falta la variable DATABASE_URL en el entorno (.env). "
-        "Copia .env.example a .env y define la URL de la base de datos."
-    )
-
-DATABASES = {
-    # La BD esta en Supabase (EE. UU.): abrir una conexion TCP+TLS nueva por
-    # cada peticion costaba ~1 s de ida y vuelta antes de la primera query.
-    # conn_max_age reutiliza la conexion entre peticiones y conn_health_checks
-    # la valida antes de usarla para no fallar con conexiones caidas.
-    "default": dj_database_url.parse(
-        DATABASE_URL,
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-}
+# `manage.py test` no debe crear una base de pruebas en Supabase ni exigir
+# credenciales: se usa SQLite en memoria. Para probar concurrencia contra
+# PostgreSQL, ejecute con --settings=config.settings_test y TEST_DATABASE_URL
+# (ver README).
+if "test" in sys.argv:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": ":memory:",
+        }
+    }
+else:
+    if not DATABASE_URL:
+        raise ImproperlyConfigured(
+            "Falta la variable DATABASE_URL en el entorno (.env). "
+            "Copia .env.example a .env y define la URL de la base de datos."
+        )
+    DATABASES = {
+        # La BD esta en Supabase (EE. UU.): abrir una conexion TCP+TLS nueva por
+        # cada peticion costaba ~1 s de ida y vuelta antes de la primera query.
+        # conn_max_age reutiliza la conexion entre peticiones y conn_health_checks
+        # la valida antes de usarla para no fallar con conexiones caidas.
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
 
 
 # Password validation
