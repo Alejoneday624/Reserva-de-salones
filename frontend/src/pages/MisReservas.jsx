@@ -4,16 +4,40 @@ import {
   Ban,
   CalendarCheck,
   CalendarDays,
+  CalendarX,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Filter,
   MapPin,
+  RotateCcw,
+  Tag,
   Users,
 } from "lucide-react";
 import { cancelarReserva, getReservasUsuario } from "../api/reservasApi";
+import { getTipos } from "../api/tipos";
 import { configEstado } from "../constants/estadosReserva";
+import { RANGOS_CAPACIDAD } from "../constants/rangosCapacidad";
 import { useUser } from "../context/UserContext";
 import ConfirmModal from "../components/common/ConfirmModal";
 import ResultadoReserva from "../components/common/ResultadoReserva";
+
+function hoyISO() {
+  const hoy = new Date();
+  const anio = hoy.getFullYear();
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoy.getDate()).padStart(2, "0");
+  return `${anio}-${mes}-${dia}`;
+}
+
+function sumarDias(fechaISO, dias) {
+  const [anio, mes, dia] = fechaISO.split("-").map(Number);
+  const fecha = new Date(anio, mes - 1, dia + dias);
+  const nuevoAnio = fecha.getFullYear();
+  const nuevoMes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const nuevoDia = String(fecha.getDate()).padStart(2, "0");
+  return `${nuevoAnio}-${nuevoMes}-${nuevoDia}`;
+}
 
 function formatearFecha(fecha) {
   if (!fecha) return "—";
@@ -109,6 +133,17 @@ export default function MisReservas() {
   // Filtro por serie: clave vacía = "todas las series".
   const [serieSeleccionada, setSerieSeleccionada] = useState("");
 
+  // Filtros de consulta (la fecha arranca en HOY, criterio de la HDU).
+  const [fecha, setFecha] = useState(hoyISO);
+  const [tipo, setTipo] = useState("");
+  const [capacidad, setCapacidad] = useState("");
+  const [horaDesde, setHoraDesde] = useState("");
+  const [horaHasta, setHoraHasta] = useState("");
+
+  // Tipos de sala del catálogo, para el desplegable del filtro.
+  const [tipos, setTipos] = useState([]);
+  const [errorTipos, setErrorTipos] = useState(false);
+
   const usuarioId = nombreUsuario?.id;
   const nombre = nombreUsuario?.name;
 
@@ -117,6 +152,26 @@ export default function MisReservas() {
   useEffect(() => {
     return () => {
       montado.current = false;
+    };
+  }, []);
+
+  // Los tipos de sala se descargan una sola vez para el desplegable.
+  useEffect(() => {
+    let cancelado = false;
+
+    const cargarTipos = async () => {
+      try {
+        const data = await getTipos();
+        if (!cancelado) setTipos(data.tipos ?? []);
+      } catch (err) {
+        console.error("Error al cargar tipos:", err);
+        if (!cancelado) setErrorTipos(true);
+      }
+    };
+
+    cargarTipos();
+    return () => {
+      cancelado = true;
     };
   }, []);
 
@@ -202,8 +257,8 @@ export default function MisReservas() {
     }
   };
 
-  // Reservas visibles según el filtro por serie. Se recalculan con cada
-  // carga/cancelación, así que el filtro sobrevive a un refresco de lista.
+  // Las series se calculan sobre TODAS las reservas del usuario (no sobre
+  // las visibles): así la numeración no cambia al aplicar otros filtros.
   const { series, seriePorId } = useMemo(
     () => calcularSeries(reservas),
     [reservas]
@@ -219,11 +274,73 @@ export default function MisReservas() {
     ? series.find((serie) => serie.clave === serieActiva) ?? null
     : null;
 
-  const visibles = serieFiltrada
-    ? reservas.filter(
-        (reserva) => seriePorId.get(reserva.id)?.clave === serieFiltrada.clave
-      )
-    : reservas;
+  // Filtros de consulta: todos se aplican sobre la lista del usuario ya
+  // descargada, así que reaccionan al instante y sin nuevas peticiones.
+  const franjaInvalida = Boolean(horaDesde && horaHasta && horaDesde >= horaHasta);
+  const errorFranja = franjaInvalida
+    ? "La hora 'Desde' debe ser anterior a la hora 'Hasta'."
+    : null;
+
+  const rangoCapacidad = RANGOS_CAPACIDAD.find(
+    (rango) => rango.id === capacidad
+  );
+
+  const visibles = errorFranja
+    ? []
+    : reservas.filter((reserva) => {
+        if (fecha && reserva.fecha !== fecha) return false;
+        if (tipo && reserva.tipo !== tipo) return false;
+        if (
+          rangoCapacidad &&
+          ((rangoCapacidad.min != null &&
+            reserva.capacidad < rangoCapacidad.min) ||
+            (rangoCapacidad.max != null &&
+              reserva.capacidad > rangoCapacidad.max))
+        ) {
+          return false;
+        }
+        // La franja filtra las reservas que se crucen con ese horario; la
+        // franja inválida no filtra, solo muestra el aviso (errorFranja).
+        if (!franjaInvalida && horaDesde && horaHasta) {
+          const inicio = String(reserva.hora_inicio ?? "").slice(0, 5);
+          const fin = String(reserva.hora_fin ?? "").slice(0, 5);
+          if (!(inicio < horaHasta && fin > horaDesde)) return false;
+        }
+        if (
+          serieFiltrada &&
+          seriePorId.get(reserva.id)?.clave !== serieFiltrada.clave
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+  const fechaTexto = fecha ? formatearFecha(fecha) : "todas las fechas";
+  const fechaCapitalizada = fechaTexto
+    ? fechaTexto.charAt(0).toUpperCase() + fechaTexto.slice(1)
+    : "";
+
+  const hayFiltrosDeSala = Boolean(
+    tipo || capacidad || horaDesde || horaHasta || serieActiva
+  );
+  const hayFiltros = fecha !== hoyISO() || hayFiltrosDeSala;
+
+  const tituloVacio = hayFiltrosDeSala
+    ? "No hay reservas que coincidan con los filtros"
+    : fecha
+      ? "No hay reservas registradas para esta fecha"
+      : "No hay reservas registradas";
+
+  const navegarDia = (delta) => setFecha(sumarDias(fecha || hoyISO(), delta));
+
+  const limpiarFiltros = () => {
+    setFecha(hoyISO());
+    setTipo("");
+    setCapacidad("");
+    setHoraDesde("");
+    setHoraHasta("");
+    setSerieSeleccionada("");
+  };
 
   const claseCampo =
     "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-400";
@@ -291,47 +408,231 @@ export default function MisReservas() {
 
           {!cargando && !error && reservas.length > 0 && (
             <>
-              {/* Filtro por serie: solo aparece si el usuario creó al
-                  menos una serie (2 o más reservas en la misma tanda). */}
-              {series.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Filter className="w-4 h-4 text-slate-500" />
-                    <h2 className="text-sm font-semibold text-slate-700">
-                      Filtros
-                    </h2>
+              {/* Panel de filtros: mismo diseño que la pantalla de
+                  consulta que esta reemplaza, más el filtro por serie. */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Filter className="w-4 h-4 text-slate-500" />
+                  <h2 className="text-sm font-semibold text-slate-700">
+                    Filtros
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-4">
+                    {/* Fecha */}
+                    <div>
+                      <label htmlFor="fecha-mis-reservas" className={claseEtiqueta}>
+                        Fecha
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navegarDia(-1)}
+                          aria-label="Día anterior"
+                          className="shrink-0 rounded-lg border border-slate-300 bg-white p-2 text-slate-500 hover:text-teal-600 hover:border-teal-400 transition-colors"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <input
+                          id="fecha-mis-reservas"
+                          type="date"
+                          value={fecha}
+                          onChange={(e) => setFecha(e.target.value)}
+                          className={claseCampo}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => navegarDia(1)}
+                          aria-label="Día siguiente"
+                          className="shrink-0 rounded-lg border border-slate-300 bg-white p-2 text-slate-500 hover:text-teal-600 hover:border-teal-400 transition-colors"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setFecha(sumarDias(hoyISO(), -1))}
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 transition-colors"
+                        >
+                          Ayer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFecha(hoyISO())}
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 transition-colors"
+                        >
+                          Hoy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFecha(sumarDias(hoyISO(), 1))}
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 transition-colors"
+                        >
+                          Mañana
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFecha("")}
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 transition-colors"
+                        >
+                          Todas las fechas
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Serie: solo si el usuario creó al menos una
+                        (2 o más reservas en la misma tanda). */}
+                    {series.length > 0 && (
+                      <div>
+                        <label htmlFor="filtro-serie" className={claseEtiqueta}>
+                          Serie
+                        </label>
+                        <select
+                          id="filtro-serie"
+                          value={serieActiva}
+                          onChange={(e) => setSerieSeleccionada(e.target.value)}
+                          className={claseCampo}
+                        >
+                          <option value="">
+                            Todas las series ({series.length})
+                          </option>
+                          {series.map((serie) => (
+                            <option key={serie.clave} value={serie.clave}>
+                              {`Serie ${serie.numero} · ${serie.total} reservas · creada el ${formatearCreacion(
+                                serie.creadaEn
+                              )}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
 
-                  <label htmlFor="filtro-serie" className={claseEtiqueta}>
-                    Serie
-                  </label>
-                  <select
-                    id="filtro-serie"
-                    value={serieActiva}
-                    onChange={(e) => setSerieSeleccionada(e.target.value)}
-                    className={claseCampo}
+                  {/* Tipo, capacidad y franja horaria */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="tipo-mis-reservas" className={claseEtiqueta}>
+                        Tipo de sala
+                      </label>
+                      <select
+                        id="tipo-mis-reservas"
+                        value={tipo}
+                        onChange={(e) => setTipo(e.target.value)}
+                        disabled={errorTipos}
+                        className={`${claseCampo} disabled:opacity-50`}
+                      >
+                        <option value="">Todas</option>
+                        {tipos.map((opcion) => (
+                          <option key={opcion} value={opcion}>
+                            {opcion}
+                          </option>
+                        ))}
+                      </select>
+                      {errorTipos && (
+                        <p className="mt-1 text-xs text-red-500">
+                          No se pudieron cargar los tipos
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label htmlFor="capacidad-mis-reservas" className={claseEtiqueta}>
+                        Capacidad
+                      </label>
+                      <select
+                        id="capacidad-mis-reservas"
+                        value={capacidad}
+                        onChange={(e) => setCapacidad(e.target.value)}
+                        className={claseCampo}
+                      >
+                        {RANGOS_CAPACIDAD.map((rango) => (
+                          <option key={rango.id || "todas"} value={rango.id}>
+                            {rango.id ? `${rango.etiqueta} personas` : "Cualquiera"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor="hora-desde" className={claseEtiqueta}>
+                        Franja: desde
+                      </label>
+                      <input
+                        id="hora-desde"
+                        type="time"
+                        value={horaDesde}
+                        onChange={(e) => setHoraDesde(e.target.value)}
+                        className={claseCampo}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="hora-hasta" className={claseEtiqueta}>
+                        Franja: hasta
+                      </label>
+                      <input
+                        id="hora-hasta"
+                        type="time"
+                        value={horaHasta}
+                        onChange={(e) => setHoraHasta(e.target.value)}
+                        className={claseCampo}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-400">
+                    La franja filtra las reservas que se crucen con ese horario.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={limpiarFiltros}
+                    disabled={!hayFiltros}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:text-slate-600 transition-colors"
                   >
-                    <option value="">
-                      Todas las series ({series.length})
-                    </option>
-                    {series.map((serie) => (
-                      <option key={serie.clave} value={serie.clave}>
-                        {`Serie ${serie.numero} · ${serie.total} reservas · creada el ${formatearCreacion(
-                          serie.creadaEn
-                        )}`}
-                      </option>
-                    ))}
-                  </select>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restablecer filtros
+                  </button>
+                </div>
+              </div>
+
+              {/* Franja inválida: se avisa y no se lista nada. */}
+              {errorFranja && (
+                <div className="rounded-xl bg-red-50 p-4 border border-red-200 text-red-700 text-sm mb-4">
+                  {errorFranja}
                 </div>
               )}
 
-              <p className="text-xs text-slate-500 mb-4">
-                {`${visibles.length} reserva${visibles.length === 1 ? "" : "s"}${
-                  serieFiltrada ? ` · Serie ${serieFiltrada.numero}` : ""
-                } · de la más reciente a la más antigua`}
-              </p>
+              {visibles.length === 0 ? (
+                <div className="rounded-xl border border-slate-200 p-10 text-center">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+                    <CalendarX className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-600 mb-1">
+                    {tituloVacio}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {fecha ? `para ${fechaCapitalizada}` : "Todas las fechas"}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Prueba con otra fecha o ajusta los filtros.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-500 mb-4">
+                    {`${visibles.length} reserva${
+                      visibles.length === 1 ? "" : "s"
+                    } ${fecha ? `para ${fechaCapitalizada}` : "· todas las fechas"}${
+                      serieFiltrada ? ` · Serie ${serieFiltrada.numero}` : ""
+                    } · de la más reciente a la más antigua`}
+                  </p>
 
-              <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-4">
                 {visibles.map((reserva) => {
                   const estado = configEstado(reserva.estado);
                   const serie = seriePorId.get(reserva.id);
@@ -368,8 +669,12 @@ export default function MisReservas() {
                         </span>
                       </div>
 
-                      {/* Ubicación y capacidad */}
+                      {/* Tipo, ubicación y capacidad */}
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 mb-3">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Tag className="w-4 h-4 text-slate-400" />
+                          {reserva.tipo}
+                        </span>
                         <span className="inline-flex items-center gap-1.5">
                           <MapPin className="w-4 h-4 text-slate-400" />
                           {reserva.ubicacion}
@@ -422,8 +727,10 @@ export default function MisReservas() {
                     </article>
                   );
                 })}
-              </div>
-            </>
+                    </div>
+                  </>
+                )}
+              </>
           )}
 
           {error && volver}

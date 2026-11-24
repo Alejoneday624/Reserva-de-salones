@@ -49,23 +49,6 @@ export const getReservasUsuario = async (usuarioId) => {
     throw error;
   }
 };
-
-// Reservas existentes de todas las salas y usuarios, filtradas por fecha,
-// tipo de sala, capacidad y franja horaria.
-export const getReservasConsulta = async (filtros = {}) => {
-  const params = Object.fromEntries(
-    Object.entries(filtros).filter(
-      ([, valor]) => valor !== "" && valor !== null && valor !== undefined,
-    ),
-  );
-  try {
-    const response = await api.get("reservas/consulta/", { params });
-    return response.data;
-  } catch (error) {
-    console.error("Error al consultar reservas:", error);
-    throw error;
-  }
-};
 // Cancela una reserva del estudiante. El backend valida que sea futura,
 // que no esté cancelada ya y que pertenezca a `usuarioId`; si falla, el
 // interceptor de axios deja el motivo en `error.userMessage`.
