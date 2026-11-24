@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Ban,
   CalendarCheck,
   CalendarDays,
   Clock,
+  Filter,
   MapPin,
   Users,
 } from "lucide-react";
@@ -45,6 +46,54 @@ function formatearCreacion(iso) {
   });
 }
 
+// Las reservas de una serie (la misma selección repetida 1 a 4 semanas)
+// se crean en UNA sola petición y quedan con `creada_en` idéntico, hasta
+// el microsegundo: ese instante es la clave que las agrupa. Una sola
+// petición = una serie, así que dos creaciones distintas nunca se mezclan.
+//
+// Solo las tiradas de 2 o más reservas se consideran serie: una reserva
+// suelta no se etiqueta ni entra en el filtro. Las series se numeran de la
+// más reciente a la más antigua (la última creada es la Serie 1), igual
+// que el orden del listado.
+function calcularSeries(reservas) {
+  const porInstante = new Map();
+  for (const reserva of reservas) {
+    // Sin `creada_en` no hay clave fiable: cada reserva queda en su propio
+    // grupo (de 1) y por lo tanto fuera del concepto de serie.
+    const clave = reserva.creada_en || `sin-creacion-${reserva.id}`;
+    const grupo = porInstante.get(clave);
+    if (grupo) grupo.push(reserva);
+    else porInstante.set(clave, [reserva]);
+  }
+
+  const tiradas = [...porInstante.entries()]
+    .filter(([, grupo]) => grupo.length > 1)
+    .sort(([instanteA], [instanteB]) => new Date(instanteB) - new Date(instanteA));
+
+  const seriePorId = new Map();
+  const series = tiradas.map(([creadaEn, grupo], indice) => {
+    const numero = indice + 1;
+    // Dentro de la serie se lee en orden cronológico (semana 1, semana 2...):
+    // todas comparten hora de creación, así que el desempate es la fecha.
+    const ordenadas = [...grupo].sort(
+      (a, b) =>
+        new Date(`${a.fecha}T00:00:00`) - new Date(`${b.fecha}T00:00:00`) ||
+        a.id - b.id
+    );
+    ordenadas.forEach((reserva, posicion) => {
+      seriePorId.set(reserva.id, {
+        clave: creadaEn,
+        numero,
+        posicion: posicion + 1,
+        total: ordenadas.length,
+      });
+    });
+    return { clave: creadaEn, creadaEn, numero, total: ordenadas.length };
+  });
+
+  return { series, seriePorId };
+}
+
 export default function MisReservas() {
   const { nombreUsuario } = useUser();
   const navigate = useNavigate();
@@ -56,6 +105,9 @@ export default function MisReservas() {
   const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
   const [cancelando, setCancelando] = useState(false);
   const [resultado, setResultado] = useState(null);
+
+  // Filtro por serie: clave vacía = "todas las series".
+  const [serieSeleccionada, setSerieSeleccionada] = useState("");
 
   const usuarioId = nombreUsuario?.id;
   const nombre = nombreUsuario?.name;
@@ -150,6 +202,34 @@ export default function MisReservas() {
     }
   };
 
+  // Reservas visibles según el filtro por serie. Se recalculan con cada
+  // carga/cancelación, así que el filtro sobrevive a un refresco de lista.
+  const { series, seriePorId } = useMemo(
+    () => calcularSeries(reservas),
+    [reservas]
+  );
+
+  // Si la serie elegida ya desapareció (p. ej. se canceló su última
+  // reserva) el filtro se restablece solo a "todas las series".
+  const serieActiva = series.some((serie) => serie.clave === serieSeleccionada)
+    ? serieSeleccionada
+    : "";
+
+  const serieFiltrada = serieActiva
+    ? series.find((serie) => serie.clave === serieActiva) ?? null
+    : null;
+
+  const visibles = serieFiltrada
+    ? reservas.filter(
+        (reserva) => seriePorId.get(reserva.id)?.clave === serieFiltrada.clave
+      )
+    : reservas;
+
+  const claseCampo =
+    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-400";
+  const claseEtiqueta =
+    "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1";
+
   const encabezado = (
     <>
       <div className="flex items-center gap-2 mb-1">
@@ -211,14 +291,50 @@ export default function MisReservas() {
 
           {!cargando && !error && reservas.length > 0 && (
             <>
+              {/* Filtro por serie: solo aparece si el usuario creó al
+                  menos una serie (2 o más reservas en la misma tanda). */}
+              {series.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Filter className="w-4 h-4 text-slate-500" />
+                    <h2 className="text-sm font-semibold text-slate-700">
+                      Filtros
+                    </h2>
+                  </div>
+
+                  <label htmlFor="filtro-serie" className={claseEtiqueta}>
+                    Serie
+                  </label>
+                  <select
+                    id="filtro-serie"
+                    value={serieActiva}
+                    onChange={(e) => setSerieSeleccionada(e.target.value)}
+                    className={claseCampo}
+                  >
+                    <option value="">
+                      Todas las series ({series.length})
+                    </option>
+                    {series.map((serie) => (
+                      <option key={serie.clave} value={serie.clave}>
+                        {`Serie ${serie.numero} · ${serie.total} reservas · creada el ${formatearCreacion(
+                          serie.creadaEn
+                        )}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <p className="text-xs text-slate-500 mb-4">
-                {reservas.length} reserva{reservas.length === 1 ? "" : "s"} ·
-                de la más reciente a la más antigua
+                {`${visibles.length} reserva${visibles.length === 1 ? "" : "s"}${
+                  serieFiltrada ? ` · Serie ${serieFiltrada.numero}` : ""
+                } · de la más reciente a la más antigua`}
               </p>
 
               <div className="flex flex-col gap-4">
-                {reservas.map((reserva) => {
+                {visibles.map((reserva) => {
                   const estado = configEstado(reserva.estado);
+                  const serie = seriePorId.get(reserva.id);
 
                   return (
                     <article
@@ -231,9 +347,18 @@ export default function MisReservas() {
                           <h2 className="font-bold text-slate-900 text-base truncate">
                             {reserva.sala}
                           </h2>
-                          <p className="text-xs text-slate-500">
-                            Reserva #{reserva.id}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                            <p className="text-xs text-slate-500">
+                              Reserva #{reserva.id}
+                            </p>
+                            {/* Solo las reservas creadas en la misma tanda
+                                (serie semanal) llevan etiqueta. */}
+                            {serie && (
+                              <span className="inline-flex items-center rounded-full bg-teal-50 text-teal-700 ring-1 ring-teal-200 px-2 py-0.5 text-xs font-semibold">
+                                Serie {serie.numero}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <span
                           className={`shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ring-1 ${estado.className}`}
@@ -269,10 +394,15 @@ export default function MisReservas() {
                         </span>
                       </div>
 
-                      {/* Creación + acción de cancelar */}
+                      {/* Serie/creación + acción de cancelar: en una serie
+                          la hora de creación es idéntica en todas, así que
+                          se muestra una sola vez en el filtro y aquí solo
+                          va la posición dentro de la serie. */}
                       <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
                         <p className="text-xs text-slate-400">
-                          Creada el {formatearCreacion(reserva.creada_en)}
+                          {serie
+                            ? `Serie ${serie.numero} · ${serie.posicion} de ${serie.total}`
+                            : `Creada el ${formatearCreacion(reserva.creada_en)}`}
                         </p>
 
                         {/* Solo las reservas futuras y no canceladas se pueden
