@@ -7,7 +7,6 @@ import SelectUser from "./pages/SelectUser";
 import Catalogo from "./pages/Catalogo";
 import SalonDetalle from "./pages/SalonDetalle";
 import MisReservas from "./pages/MisReservas";
-import ConsultaReservas from "./pages/ConsultaReservas";
 
 function App() {
   return (
@@ -36,14 +35,6 @@ function App() {
             <ProtectedRoute>
               <AppLayout>
                 <MisReservas />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-
-          <Route path="/consulta-reservas" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <ConsultaReservas />
               </AppLayout>
             </ProtectedRoute>
           } />
