@@ -64,6 +64,7 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
 
     sala = serializers.CharField(source="recurso.nombre")
     recurso_id = serializers.IntegerField(source="recurso.id")
+    tipo = serializers.CharField(source="recurso.tipo")
     ubicacion = serializers.CharField(source="recurso.ubicacion")
     capacidad = serializers.IntegerField(source="recurso.capacidad")
     estado = serializers.SerializerMethodField()
@@ -74,6 +75,7 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
             "id",
             "recurso_id",
             "sala",
+            "tipo",
             "ubicacion",
             "capacidad",
             "fecha",

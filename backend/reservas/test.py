@@ -68,13 +68,20 @@ class EsquemaReservasMixin:
             correo=f"estudiante{id_}@uan.edu.co",
         )
 
-    def crear_recurso(self, id_, nombre="Sala de estudio", activo=1):
+    def crear_recurso(
+        self,
+        id_,
+        nombre="Sala de estudio",
+        activo=1,
+        tipo="Sala de estudio",
+        capacidad=6,
+    ):
         return Recursos.objects.create(
             id=id_,
             nombre=nombre,
-            tipo="Sala de estudio",
+            tipo=tipo,
             ubicacion="Bloque A",
-            capacidad=6,
+            capacidad=capacidad,
             atributos="wifi,proyector",
             activo=activo,
         )
@@ -261,6 +268,110 @@ class RendimientoTests(EsquemaReservasMixin, TestCase):
             )
 
         self.assertEqual(len(sin_historico), len(con_historico))
+
+
+class ConsultaReservasTests(EsquemaReservasMixin, TestCase):
+    """HDU: consultar reservas por fecha y filtrar la ocupación de las salas."""
+
+    def get_consulta(self, **params):
+        return self.client.get("/api/reservas/consulta/", params)
+
+    def test_devuelve_solo_las_reservas_de_la_fecha(self):
+        ayer = self.fecha - timedelta(days=1)
+        manana = self.fecha + timedelta(days=1)
+        self.crear_reserva(HORA(8), HORA(9), fecha=ayer)
+        reserva_hoy = self.crear_reserva(HORA(10), HORA(11), fecha=self.fecha)
+        self.crear_reserva(HORA(12), HORA(13), fecha=manana)
+
+        respuesta = self.get_consulta(fecha=self.fecha.isoformat())
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["total"], 1)
+        self.assertEqual(
+            [reserva["id"] for reserva in respuesta.json()["reservas"]],
+            [reserva_hoy.id],
+        )
+
+    def test_permite_consultar_fechas_anteriores_y_futuras(self):
+        pasada = self.fecha - timedelta(days=30)
+        futura = self.fecha + timedelta(days=30)
+        reserva_pasada = self.crear_reserva(HORA(7), HORA(8), fecha=pasada)
+        reserva_futura = self.crear_reserva(HORA(7), HORA(8), fecha=futura)
+
+        for fecha, reserva in ((pasada, reserva_pasada), (futura, reserva_futura)):
+            with self.subTest(fecha=fecha):
+                respuesta = self.get_consulta(fecha=fecha.isoformat())
+                self.assertEqual(respuesta.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in respuesta.json()["reservas"]],
+                    [reserva.id],
+                )
+
+    def test_fecha_sin_reservas_devuelve_lista_vacia(self):
+        respuesta = self.get_consulta(
+            fecha=(self.fecha + timedelta(days=5)).isoformat()
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["total"], 0)
+        self.assertEqual(respuesta.json()["reservas"], [])
+
+    def test_filtra_por_tipo_capacidad_y_franja_horaria(self):
+        auditorio = self.crear_recurso(
+            2, "Auditorio", tipo="Auditorio", capacidad=12
+        )
+        self.crear_reserva(HORA(8), HORA(9))  # sala normal
+        reserva_auditorio = self.crear_reserva(
+            HORA(8), HORA(9), recurso=auditorio
+        )
+        self.crear_reserva(HORA(14), HORA(15), recurso=auditorio)
+
+        respuesta = self.get_consulta(
+            fecha=self.fecha.isoformat(),
+            tipo="auditorio",
+            cap_min=10,
+            cap_max=12,
+            hora_desde="08:00",
+            hora_hasta="09:00",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["total"], 1)
+        reserva = respuesta.json()["reservas"][0]
+        self.assertEqual(reserva["id"], reserva_auditorio.id)
+        self.assertEqual(reserva["tipo"], "Auditorio")
+
+    def test_sin_fecha_devuelve_todas_las_jornadas(self):
+        self.crear_reserva(HORA(8), HORA(9), fecha=self.fecha - timedelta(days=2))
+        self.crear_reserva(HORA(8), HORA(9), fecha=self.fecha + timedelta(days=2))
+
+        respuesta = self.get_consulta()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["total"], 2)
+        self.assertIsNone(respuesta.json()["fecha"])
+
+    def test_fecha_invalida_devuelve_400(self):
+        respuesta = self.get_consulta(fecha="2026-13-45")
+        self.assertEqual(respuesta.status_code, 400)
+
+    def test_franja_invalida_devuelve_400(self):
+        respuesta = self.get_consulta(
+            fecha=self.fecha.isoformat(), hora_desde="9", hora_hasta="8"
+        )
+        self.assertEqual(respuesta.status_code, 400)
+
+    def test_consulta_no_hace_n_plus_1(self):
+        for i in range(20):
+            self.crear_reserva(
+                HORA(8), HORA(9), fecha=self.fecha + timedelta(days=i)
+            )
+
+        with self.assertNumQueries(1):
+            respuesta = self.get_consulta(fecha=self.fecha.isoformat())
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["total"], 1)
 
 
 class SolapamientoTests(EsquemaReservasMixin, TestCase):

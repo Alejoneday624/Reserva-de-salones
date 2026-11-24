@@ -9,6 +9,7 @@ Aplicación web para consultar la disponibilidad y realizar reservas de salas de
 - Visualización de salas.
 - Búsqueda y filtros.
 - Consulta de disponibilidad.
+- Consulta y filtro de reservas por fecha, tipo de sala, capacidad y horario.
 - Creación de reservas.
 - Cancelación de reservas.
 
