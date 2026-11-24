@@ -41,6 +41,36 @@ function fechaLarga(fecha) {
   });
 }
 
+function fechaCorta(fecha) {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  return new Date(anio, mes - 1, dia).toLocaleDateString("es-CO", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+// Suma N semanas (7 días) a una fecha ISO, sin pasar por UTC.
+function sumarSemanas(fecha, semanas) {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  const resultado = new Date(anio, mes - 1, dia);
+  resultado.setDate(resultado.getDate() + 7 * semanas);
+  const anio2 = resultado.getFullYear();
+  const mes2 = String(resultado.getMonth() + 1).padStart(2, "0");
+  const dia2 = String(resultado.getDate()).padStart(2, "0");
+  return `${anio2}-${mes2}-${dia2}`;
+}
+
+// "08:00:00-09:00:00" → "08:00–09:00" (etiqueta corta de un horario).
+function rangoDeClave(clave) {
+  const [hi, hf] = clave.split("-");
+  return `${hi.slice(0, 5)}–${hf.slice(0, 5)}`;
+}
+
+function formatosRangos(claves) {
+  return claves.map(rangoDeClave).join(", ");
+}
+
 function hoyISO() {
   const hoy = new Date();
   const anio = hoy.getFullYear();
@@ -105,6 +135,13 @@ export default function SalonDetalle() {
   const [resultado, setResultado] = useState(null);
   const [resumen, setResumen] = useState(null);
 
+  // Reserva recurrente: 1 a 4 semanas con el mismo día y horario.
+  const [semanas, setSemanas] = useState(1);
+  // Disponibilidad de las fechas repetidas (fecha +7, +14, +21): undefined
+  // mientras carga, null si no se pudo verificar.
+  const [franjasSemanales, setFranjasSemanales] = useState({});
+  const [cargandoSemanas, setCargandoSemanas] = useState(false);
+
   useEffect(() => {
     const fetchDetalle = async () => {
       setCargando(true);
@@ -129,6 +166,8 @@ export default function SalonDetalle() {
       setFechaSel(null);
       setSeleccion([]);
       setMensaje(null);
+      setSemanas(1);
+      setFranjasSemanales({});
       setCargandoFechas(true);
       setErrorFechas(null);
       try {
@@ -212,6 +251,44 @@ export default function SalonDetalle() {
     };
   }, [id, fechaSel]);
 
+  // Disponibilidad de las fechas repetidas (+7, +14, +21 días): se consulta
+  // al cambiar de sala, de fecha o de semanas y se compara localmente con la
+  // selección, para avisar del conflicto ANTES de enviar la reserva.
+  useEffect(() => {
+    let cancelado = false;
+    const fetchSemanales = async () => {
+      if (!fechaSel || semanas <= 1) {
+        setFranjasSemanales({});
+        setCargandoSemanas(false);
+        return;
+      }
+      setCargandoSemanas(true);
+      const fechasExtra = Array.from({ length: semanas - 1 }, (_, i) =>
+        sumarSemanas(fechaSel, i + 1),
+      );
+      const resultados = await Promise.all(
+        fechasExtra.map(async (fecha) => {
+          try {
+            const data = await getDisponibilidad(id, fecha);
+            return [fecha, data.franjas ?? []];
+          } catch (err) {
+            console.error(`Error al verificar disponibilidad de ${fecha}:`, err);
+            // null = sin verificación: el backend validará al enviar.
+            return [fecha, null];
+          }
+        }),
+      );
+      if (cancelado) return;
+      setFranjasSemanales(Object.fromEntries(resultados));
+      setCargandoSemanas(false);
+    };
+
+    fetchSemanales();
+    return () => {
+      cancelado = true;
+    };
+  }, [id, fechaSel, semanas]);
+
   const actualizarFechas = async () => {
     try {
       const data = await getFechasDisponibilidad(id);
@@ -230,6 +307,58 @@ export default function SalonDetalle() {
 
   const seleccionClaves = seleccion;
   const horasSeleccion = horasDeClaves(seleccionClaves, franjas);
+
+  // Fechas de la serie recurrente: la elegida + 7 días por cada semana extra.
+  const fechasRecurrentes = fechaSel
+    ? Array.from({ length: semanas }, (_, i) => sumarSemanas(fechaSel, i))
+    : [];
+
+  // Conflictos ya detectados en las fechas repetidas (antes de enviar):
+  // se compara la selección con la disponibilidad traída de cada fecha y se
+  // señala la hora exacta que presenta el inconveniente.
+  const conflictosSemanas = (() => {
+    if (!fechaSel || semanas <= 1) return [];
+    const conflictos = [];
+    for (let i = 1; i < semanas; i++) {
+      const fecha = sumarSemanas(fechaSel, i);
+      const franjas = franjasSemanales[fecha];
+      if (!franjas) continue; // aún se verifica, o no se pudo verificar
+
+      const partes = [];
+      let horasConflicto = "";
+      if (!franjas.length) {
+        if (seleccionClaves.length) {
+          horasConflicto = formatosRangos(seleccionClaves);
+          partes.push(`sin horario cargado (${horasConflicto})`);
+        } else {
+          partes.push("no tiene horarios cargados");
+        }
+      } else {
+        const sinHorario = seleccionClaves.filter(
+          (clave) => !franjas.some((f) => claveDe(f) === clave),
+        );
+        const ocupadas = seleccionClaves.filter((clave) => {
+          const franja = franjas.find((f) => claveDe(f) === clave);
+          return franja && !franja.disponible;
+        });
+        if (sinHorario.length) {
+          partes.push(`sin horario cargado (${formatosRangos(sinHorario)})`);
+        }
+        if (ocupadas.length) {
+          partes.push(`ya está ocupado (${formatosRangos(ocupadas)})`);
+        }
+        horasConflicto = formatosRangos([...sinHorario, ...ocupadas]);
+      }
+      if (partes.length) {
+        conflictos.push({
+          fecha,
+          motivo: partes.join(" y "),
+          horas: horasConflicto,
+        });
+      }
+    }
+    return conflictos;
+  })();
 
   // Etiqueta de la selección: rango si es continuo; si no, lista de horarios.
   const etiquetaHoras = (() => {
@@ -308,6 +437,8 @@ export default function SalonDetalle() {
 
   const reservar = async () => {
     if (!seleccionClaves.length || !fechaSel || !nombreUsuario?.id) return;
+    // Si alguna fecha de la serie tiene conflicto, no se envía nada.
+    if (conflictosSemanas.length) return;
 
     if (resumen && resumen.fecha === fechaSel) {
       if (horasSeleccion > resumen.horas_disponibles) {
@@ -333,10 +464,16 @@ export default function SalonDetalle() {
         usuarioId: nombreUsuario.id,
         fecha: fechaSel,
         bloques,
+        semanas,
       });
       setResultado({
         tipo: "exito",
-        texto: `Reserva confirmada: ${fechaSel} · ${etiquetaHoras}`,
+        texto:
+          semanas === 1
+            ? `Reserva confirmada: ${fechaSel} · ${etiquetaHoras}`
+            : `Reserva recurrente confirmada (${semanas} semanas): ${fechasRecurrentes
+                .map(fechaCorta)
+                .join(" · ")} · ${etiquetaHoras}`,
       });
       setSeleccion([]);
     } catch (err) {
@@ -592,10 +729,108 @@ export default function SalonDetalle() {
                   </div>
                 </div>
 
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                  Repetir reserva (semanas)
+                </p>
+                <div className="flex gap-2 mb-2">
+                  {[1, 2, 3, 4].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setSemanas(n)}
+                      disabled={reservando}
+                      aria-pressed={semanas === n}
+                      className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                        semanas === n
+                          ? "border-teal-500 bg-teal-500 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-teal-400"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  {semanas === 1
+                    ? "Una sola reserva, sin repetición."
+                    : `El mismo día y horario ${semanas} semanas seguidas (máximo 4).`}
+                </p>
+
+                {semanas > 1 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                      Fechas de la serie
+                    </p>
+                    <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm mb-2">
+                      {fechasRecurrentes.map((fecha, i) => {
+                        const conflicto = conflictosSemanas.find(
+                          (c) => c.fecha === fecha,
+                        );
+                        const verificando =
+                          cargandoSemanas && i > 0 && !franjasSemanales[fecha];
+                        const sinVerificar =
+                          i > 0 && franjasSemanales[fecha] === null;
+                        return (
+                          <div
+                            key={fecha}
+                            className={`flex items-center justify-between gap-2 px-3 py-2 ${
+                              conflicto ? "bg-red-50 text-red-600" : "text-slate-700"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
+                              {fechaCorta(fecha)}
+                            </span>
+                            {conflicto ? (
+                              <span className="text-[11px] font-semibold">
+                                {conflicto.horas || "conflicto"}
+                              </span>
+                            ) : verificando ? (
+                              <span className="text-[11px] text-slate-400">
+                                verificando...
+                              </span>
+                            ) : sinVerificar ? (
+                              <span className="text-[11px] text-slate-400">
+                                sin verificar
+                              </span>
+                            ) : i > 0 ? (
+                              <span className="text-[11px] text-teal-600">
+                                disponible
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {conflictosSemanas.length > 0 && (
+                      <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">
+                        <p className="font-semibold mb-1">
+                          No se puede crear la serie:
+                        </p>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {conflictosSemanas.map((conflicto) => (
+                            <li key={conflicto.fecha}>
+                              {fechaLarga(conflicto.fecha)}:{" "}
+                              {conflicto.motivo.toLowerCase()}.
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1">
+                          No se registrará ninguna reserva hasta corregir esta
+                          fecha: ajusta la selección o elige menos semanas.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="rounded-xl bg-teal-50 border border-teal-200 text-teal-700 text-xs px-3 py-2 mb-4 flex items-start gap-2">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>
                     Máximo 3 horas por día: pueden ser seguidas o separadas.
+                    {semanas > 1 &&
+                      " El límite se valida por separado en cada fecha de la serie."}
                     {resumen && resumen.fecha === fechaSel && (
                       <>
                         {" "}
@@ -610,7 +845,11 @@ export default function SalonDetalle() {
                   type="button"
                   onClick={reservar}
                   disabled={
-                    !seleccionClaves.length || reservando || !nombreUsuario?.id
+                    !seleccionClaves.length ||
+                    reservando ||
+                    !nombreUsuario?.id ||
+                    cargandoSemanas ||
+                    conflictosSemanas.length > 0
                   }
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-teal-500 hover:bg-teal-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold py-3 transition-colors"
                 >
@@ -619,6 +858,8 @@ export default function SalonDetalle() {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Confirmando reserva...
                     </>
+                  ) : semanas > 1 ? (
+                    `Reservar ${semanas} semanas`
                   ) : (
                     "Reservar Espacio"
                   )}

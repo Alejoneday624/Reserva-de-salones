@@ -93,3 +93,25 @@ class Reservas(models.Model):
         if self.fecha == hoy and self.hora_inicio <= hora_actual < self.hora_fin:
             return "en curso"
         return "activa"
+
+    @property
+    def es_futura(self):
+        """True si la reserva aún no ha empezado (hora local de la BD).
+
+        Una reserva de hoy que ya comenzó (en curso) o que terminó no es
+        futura.
+        """
+        ahora = timezone.localtime()
+        hoy, hora_actual = ahora.date(), ahora.time()
+        return self.fecha > hoy or (
+            self.fecha == hoy and self.hora_inicio > hora_actual
+        )
+
+    @property
+    def es_cancelable(self):
+        """Solo cancela una reserva futura que todavía no esté cancelada.
+
+        Cancelar una vencida, una en curso o una ya cancelada no libera
+        ninguna franja útil, por eso se rechaza.
+        """
+        return self.es_futura and (self.estado or "").strip().lower() != "cancelada"

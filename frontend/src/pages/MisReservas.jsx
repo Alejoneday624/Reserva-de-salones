@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Ban,
   CalendarCheck,
   CalendarDays,
   Clock,
@@ -9,7 +10,10 @@ import {
 } from "lucide-react";
 import { getReservasUsuario } from "../api/reservasApi";
 import { configEstado } from "../constants/estadosReserva";
+import { cancelarReserva, getReservasUsuario } from "../api/reservasApi";
 import { useUser } from "../context/UserContext";
+import ConfirmModal from "../components/common/ConfirmModal";
+import ResultadoReserva from "../components/common/ResultadoReserva";
 
 function formatearFecha(fecha) {
   if (!fecha) return "—";
@@ -49,8 +53,33 @@ export default function MisReservas() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
+  // Flujo de cancelación.
+  const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
+  const [cancelando, setCancelando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
   const usuarioId = nombreUsuario?.id;
   const nombre = nombreUsuario?.name;
+
+  // Evita setState después de desmontar (p. ej. al cambiar de ruta).
+  const montado = useRef(true);
+  useEffect(() => {
+    return () => {
+      montado.current = false;
+    };
+  }, []);
+
+  // Descarga y ordena las reservas sin tocar el estado: así se reutiliza
+  // tanto desde el effect de carga como después de cancelar una reserva.
+  const obtenerReservas = useCallback(async () => {
+    const data = await getReservasUsuario(usuarioId);
+    const lista = Array.isArray(data?.reservas) ? data.reservas : [];
+    // El backend ya ordena de la más reciente a la más antigua; este orden
+    // es defensivo para que la vista no dependa de ese detalle.
+    return [...lista].sort(
+      (a, b) => new Date(b.creada_en ?? 0) - new Date(a.creada_en ?? 0)
+    );
+  }, [usuarioId]);
 
   useEffect(() => {
     // Sin usuario no hay nada que consultar; ProtectedRoute ya redirige en
@@ -59,34 +88,68 @@ export default function MisReservas() {
 
     let cancelado = false;
 
-    const cargarReservas = async () => {
-      setCargando(true);
-      setError(null);
-      try {
-        const data = await getReservasUsuario(usuarioId);
+    // Los setState viven en los callbacks (nunca de forma síncrona en el
+    // cuerpo del effect) y se descartan si el usuario cambia de pantalla.
+    obtenerReservas()
+      .then((lista) => {
         if (cancelado) return;
-
-        const lista = Array.isArray(data?.reservas) ? data.reservas : [];
-        // El backend ya ordena por fecha de creación; este orden es defensivo
-        // para que la vista no dependa de ese detalle.
-        const ordenadas = [...lista].sort(
-          (a, b) => new Date(a.creada_en ?? 0) - new Date(b.creada_en ?? 0)
-        );
-        setReservas(ordenadas);
-      } catch (err) {
+        setReservas(lista);
+        setError(null);
+      })
+      .catch((err) => {
         console.error("Error al cargar reservas:", err);
-        if (!cancelado) setError("No se pudieron cargar las reservas");
-      } finally {
+        if (cancelado) return;
+        setError("No se pudieron cargar las reservas");
+      })
+      .finally(() => {
         if (!cancelado) setCargando(false);
-      }
-    };
-
-    cargarReservas();
+      });
 
     return () => {
       cancelado = true;
     };
-  }, [usuarioId]);
+  }, [usuarioId, obtenerReservas]);
+
+  // Cancela la reserva seleccionada y refresca el listado para que el
+  // estudiante vea el nuevo estado (cancelada) y la franja liberada.
+  const confirmarCancelacion = async () => {
+    if (cancelando || !reservaSeleccionada || !usuarioId) return;
+
+    const reserva = reservaSeleccionada;
+    setCancelando(true);
+    try {
+      await cancelarReserva(reserva.id, usuarioId);
+
+      setReservaSeleccionada(null);
+      setResultado({
+        tipo: "exito",
+        titulo: "Cancelación realizada",
+        mensaje: `La reserva de ${reserva.sala} fue cancelada. Su franja horaria ya está disponible para otra reserva.`,
+      });
+    } catch (err) {
+      console.error("Error al cancelar la reserva:", err);
+      setReservaSeleccionada(null);
+      setResultado({
+        tipo: "error",
+        titulo: "No se pudo cancelar",
+        mensaje: err.userMessage || "No se pudo cancelar la reserva",
+      });
+      return;
+    } finally {
+      if (montado.current) setCancelando(false);
+    }
+
+    // Refresco del listado para que se vea el nuevo estado (cancelada).
+    // Si falla se conserva la lista anterior: la cancelación ya ocurrió.
+    try {
+      const lista = await obtenerReservas();
+      if (!montado.current) return;
+      setReservas(lista);
+      setError(null);
+    } catch (err) {
+      console.error("Error al actualizar el listado de reservas:", err);
+    }
+  };
 
   const encabezado = (
     <>
@@ -151,7 +214,7 @@ export default function MisReservas() {
             <>
               <p className="text-xs text-slate-500 mb-4">
                 {reservas.length} reserva{reservas.length === 1 ? "" : "s"} ·
-                ordenadas por fecha de creación
+                de la más reciente a la más antigua
               </p>
 
               <div className="flex flex-col gap-4">
@@ -207,10 +270,26 @@ export default function MisReservas() {
                         </span>
                       </div>
 
-                      {/* Fecha de creación */}
-                      <p className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-400">
-                        Creada el {formatearCreacion(reserva.creada_en)}
-                      </p>
+                      {/* Creación + acción de cancelar */}
+                      <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-xs text-slate-400">
+                          Creada el {formatearCreacion(reserva.creada_en)}
+                        </p>
+
+                        {/* Solo las reservas futuras y no canceladas se pueden
+                            cancelar (lo decide el backend). */}
+                        {reserva.cancelable && (
+                          <button
+                            type="button"
+                            onClick={() => setReservaSeleccionada(reserva)}
+                            disabled={cancelando}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            Cancelar reserva
+                          </button>
+                        )}
+                      </div>
                     </article>
                   );
                 })}
@@ -221,6 +300,38 @@ export default function MisReservas() {
           {error && volver}
         </div>
       </div>
+
+      {/* Confirmación previa a cancelar (criterio de la HDU). */}
+      <ConfirmModal
+        isOpen={!!reservaSeleccionada}
+        titulo="Cancelar reserva"
+        mensaje={
+          reservaSeleccionada
+            ? `¿Seguro que deseas cancelar la reserva de ${reservaSeleccionada.sala} del ${formatearFecha(
+                reservaSeleccionada.fecha
+              )} de ${formatearHora(reservaSeleccionada.hora_inicio)} a ${formatearHora(
+                reservaSeleccionada.hora_fin
+              )}? La franja horaria quedará disponible nuevamente.`
+            : undefined
+        }
+        textoConfirmar={cancelando ? "Cancelando..." : "Sí, cancelar"}
+        textoCancelar="No, mantener"
+        confirmarPeligroso
+        onConfirm={confirmarCancelacion}
+        onCancel={() => {
+          if (!cancelando) setReservaSeleccionada(null);
+        }}
+      />
+
+      {/* Resultado de la cancelación: modal con animación. */}
+      {resultado && (
+        <ResultadoReserva
+          tipo={resultado.tipo}
+          titulo={resultado.titulo}
+          mensaje={resultado.mensaje}
+          onCerrar={() => setResultado(null)}
+        />
+      )}
     </div>
   );
 }

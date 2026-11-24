@@ -11,7 +11,33 @@ Aplicación web para consultar la disponibilidad y realizar reservas de salas de
 - Consulta de disponibilidad.
 - Consulta y filtro de reservas por fecha, tipo de sala, capacidad y horario.
 - Creación de reservas.
+- Creación de reservas recurrentes (1 a 4 semanas seguidas).
 - Cancelación de reservas.
+
+## Reservas recurrentes
+
+`POST /api/reservas/` acepta el campo opcional `semanas` (entero de 1 a 4,
+por defecto 1). La reserva se repite cada 7 días con el mismo día de la
+semana y la misma franja horaria:
+
+```json
+{
+  "recurso_id": 1,
+  "usuario_id": 1,
+  "fecha": "2026-11-12",
+  "bloques": [{ "hora_inicio": "08:00:00", "hora_fin": "09:00:00" }],
+  "semanas": 4
+}
+```
+
+Los bloques seleccionados se repiten completos en cada fecha de la serie
+(un tramo, varios tramos o horas separadas, dentro del tope de 3 horas por
+día). La serie se valida **fecha por fecha** (franja cargada, horario libre
+y límite diario, evaluado por separado en cada fecha). Si alguna fecha
+presenta un conflicto, la operación es todo-o-nada: **no se crea ninguna
+reserva** y la respuesta informa la fecha **y la hora** del inconveniente
+en `error` y en los campos `fecha_conflicto`, `hora_inicio` y `hora_fin`
+(HTTP 400 o 409 según el motivo).
 
 ## Tecnologías
 

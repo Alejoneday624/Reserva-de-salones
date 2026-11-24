@@ -1,5 +1,24 @@
+from datetime import timezone as zona_utc
+
+from django.utils import timezone
 from rest_framework import serializers
 from .models import Usuarios, Recursos, Franjas, Reservas
+
+
+class InstanteUTCField(serializers.DateTimeField):
+    """Campo para `creada_en`, cuya columna es `timestamp` SIN zona horaria.
+
+    Django convierte el valor a UTC al escribirlo (USE_TZ=True), pero al
+    leerlo devuelve un datetime naive (sin tzinfo). DRF etiquetaría ese naive
+    con TIME_ZONE (America/Bogota) y la pantalla mostraría la hora de más
+    (5 horas: 5 PM se vería como 10 PM). Aquí se etiqueta UTC explícitamente
+    para que el navegador convierta a la hora local del usuario.
+    """
+
+    def to_representation(self, value):
+        if value is not None and timezone.is_naive(value):
+            value = value.replace(tzinfo=zona_utc.utc)
+        return super().to_representation(value)
 
 
 class UsuariosSerializer(serializers.ModelSerializer):
@@ -40,6 +59,8 @@ class DisponibilidadFranjaSerializer(serializers.Serializer):
 
 
 class ReservaSerializer(serializers.ModelSerializer):
+    creada_en = InstanteUTCField()
+
     class Meta:
         model = Reservas
         fields = [
@@ -68,6 +89,8 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
     ubicacion = serializers.CharField(source="recurso.ubicacion")
     capacidad = serializers.IntegerField(source="recurso.capacidad")
     estado = serializers.SerializerMethodField()
+    cancelable = serializers.BooleanField(source="es_cancelable")
+    creada_en = InstanteUTCField()
 
     class Meta:
         model = Reservas
@@ -82,6 +105,7 @@ class ReservaConsultaSerializer(serializers.ModelSerializer):
             "hora_inicio",
             "hora_fin",
             "estado",
+            "cancelable",
             "creada_en",
         ]
 
@@ -95,6 +119,16 @@ class ResumenReservaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservas
         fields = ["id", "recurso", "recurso_nombre", "hora_inicio", "hora_fin", "estado"]
+
+
+class CancelarReservaSerializer(serializers.Serializer):
+    """Entrada de POST /api/reservas/<id>/cancelar/.
+
+    `usuario_id` es el estudiante que solicita la cancelación: la vista
+    verifica que la reserva le pertenezca.
+    """
+
+    usuario_id = serializers.IntegerField()
 
 
 class BloqueHorarioSerializer(serializers.Serializer):
@@ -117,11 +151,25 @@ class CrearReservaSerializer(serializers.Serializer):
     Acepta el formato actual (`bloques`, una lista de tramos) y el formato
     antiguo (`hora_inicio` / `hora_fin` simples), que se convierte en un único
     bloque. La validación de solape entre bloques también vive aquí.
+
+    `semanas` indica cuántas semanas seguidas se repite la reserva (1 a 4,
+    mismo día de la semana y misma franja horaria); opcional y por defecto 1,
+    para no romper a los clientes actuales.
     """
 
     recurso_id = serializers.IntegerField()
     usuario_id = serializers.IntegerField()
     fecha = serializers.DateField()
+    semanas = serializers.IntegerField(
+        default=1,
+        min_value=1,
+        max_value=4,
+        error_messages={
+            "invalid": "'semanas' debe ser un número entero",
+            "min_value": "'semanas' debe ser al menos 1",
+            "max_value": "'semanas' debe ser máximo 4",
+        },
+    )
     bloques = serializers.ListField(
         child=BloqueHorarioSerializer(),
         required=False,
