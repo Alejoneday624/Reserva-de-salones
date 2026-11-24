@@ -1,9 +1,14 @@
 import { NavLink } from "react-router-dom";
-import { CalendarCheck, LayoutGrid, X } from "lucide-react";
+import { CalendarCheck, CalendarDays, LayoutGrid, X } from "lucide-react";
 
 const ENLACES = [
   { to: "/catalogo", etiqueta: "Catálogo", Icono: LayoutGrid },
   { to: "/mis-reservas", etiqueta: "Mis Reservas", Icono: CalendarCheck },
+  {
+    to: "/consulta-reservas",
+    etiqueta: "Consultar Reservas",
+    Icono: CalendarDays,
+  },
 ];
 
 // En escritorio (md en adelante) es la barra lateral fija de siempre.

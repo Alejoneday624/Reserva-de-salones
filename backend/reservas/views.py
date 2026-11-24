@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -242,6 +242,86 @@ def reservas_crear(request):
 
     return Response(
         {"reservas": ReservaSerializer(reservas, many=True).data}, status=201
+    )
+
+
+@api_view(["GET"])
+def reservas_consulta(request):
+    """Reservas existentes de todas las salas y usuarios, con filtros.
+
+    La HDU de consulta permite ver la ocupación de una jornada. Todos los
+    filtros son opcionales:
+
+    - ``fecha``: día exacto (YYYY-MM-DD). Sin él se consulta todo el histórico.
+    - ``tipo``: tipo de sala (sin distinguir mayúsculas).
+    - ``cap_min`` / ``cap_max``: rango de capacidad de la sala.
+    - ``hora_desde`` / ``hora_hasta``: franja horaria (HH:MM); se devuelven las
+      reservas que se crucen con ella.
+    """
+    reservas = Reservas.objects.select_related("recurso").order_by(
+        "fecha", "hora_inicio", "recurso__nombre"
+    )
+
+    fecha = None
+    fecha_param = request.query_params.get("fecha")
+    if fecha_param:
+        try:
+            fecha = date.fromisoformat(fecha_param)
+        except ValueError:
+            return Response(
+                {"error": "'fecha' debe tener formato YYYY-MM-DD"}, status=400
+            )
+        reservas = reservas.filter(fecha=fecha)
+
+    tipo = request.query_params.get("tipo")
+    if tipo:
+        reservas = reservas.filter(recurso__tipo__iexact=tipo)
+
+    for param, lookup in (
+        ("cap_min", "recurso__capacidad__gte"),
+        ("cap_max", "recurso__capacidad__lte"),
+    ):
+        valor = request.query_params.get(param)
+        if valor is None or valor == "":
+            continue
+        try:
+            reservas = reservas.filter(**{lookup: int(valor)})
+        except (TypeError, ValueError):
+            return Response(
+                {"error": f"'{param}' debe ser un número entero"},
+                status=400,
+            )
+
+    horas = {}
+    for param in ("hora_desde", "hora_hasta"):
+        valor = request.query_params.get(param)
+        if valor is None or valor == "":
+            continue
+        try:
+            horas[param] = time.fromisoformat(valor)
+        except ValueError:
+            return Response(
+                {"error": f"'{param}' debe tener formato HH:MM"}, status=400
+            )
+
+    desde, hasta = horas.get("hora_desde"), horas.get("hora_hasta")
+    if desde is not None and hasta is not None and desde >= hasta:
+        return Response(
+            {"error": "'hora_desde' debe ser anterior a 'hora_hasta'"},
+            status=400,
+        )
+    if desde is not None:
+        reservas = reservas.filter(hora_fin__gt=desde)
+    if hasta is not None:
+        reservas = reservas.filter(hora_inicio__lt=hasta)
+
+    lista = list(reservas)
+    return Response(
+        {
+            "fecha": fecha.isoformat() if fecha else None,
+            "total": len(lista),
+            "reservas": ReservaConsultaSerializer(lista, many=True).data,
+        }
     )
 
 

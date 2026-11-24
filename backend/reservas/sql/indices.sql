@@ -12,3 +12,8 @@ CREATE INDEX IF NOT EXISTS idx_franjas_recurso_fecha
 -- que marca una franja como ocupada.
 CREATE INDEX IF NOT EXISTS idx_reservas_recurso_fecha
     ON reservas (recurso_id, fecha, estado);
+
+-- Consulta de reservas por jornada: acelera el filtro por fecha y el orden
+-- por horario de la pantalla "Consultar Reservas".
+CREATE INDEX IF NOT EXISTS idx_reservas_fecha_hora
+    ON reservas (fecha, hora_inicio);
