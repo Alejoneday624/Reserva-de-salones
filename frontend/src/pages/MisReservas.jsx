@@ -8,9 +8,8 @@ import {
   MapPin,
   Users,
 } from "lucide-react";
-import { getReservasUsuario } from "../api/reservasApi";
-import { configEstado } from "../constants/estadosReserva";
 import { cancelarReserva, getReservasUsuario } from "../api/reservasApi";
+import { configEstado } from "../constants/estadosReserva";
 import { useUser } from "../context/UserContext";
 import ConfirmModal from "../components/common/ConfirmModal";
 import ResultadoReserva from "../components/common/ResultadoReserva";
